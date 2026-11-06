@@ -4,7 +4,7 @@ A script lives in ``src/<key>/`` (a ``tpf.toml`` and a ``main.sh``). Its
 sources may contain directives, which must start in column 0:
 
     # tpf:include NAME            insert the shared module src/lib/NAME.sh
-    # tpf:include ./file.sh       insert a file next to the current one
+    # tpf:include ./file.sh       insert a file relative to the current one (../ too)
     # tpf:embed PATH as NAME      define the function NAME that prints PATH
     # tpf:embed-dist KEY as NAME  same, with the built script src/KEY
 
@@ -267,8 +267,8 @@ class Project:
 
     def _include(self, current: Path, arg: str, where: str, ctx: _Context) -> list[str]:
         if not arg or " " in arg:
-            raise TpfError(f"{where}: usage: # tpf:include NAME | ./relative.sh")
-        if arg.startswith("./"):
+            raise TpfError(f"{where}: usage: # tpf:include NAME | ./relative.sh | ../relative.sh")
+        if arg.startswith(("./", "../")):
             target = self._inside(current.parent, arg, where)
             module = None
         else:

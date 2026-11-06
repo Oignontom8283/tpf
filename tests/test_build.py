@@ -70,6 +70,15 @@ class IncludeTests(ProjectCase):
         code, out, _ = self.run_script(self.build_text("demo"))
         self.assertEqual((code, out), (0, "part\n"))
 
+    def test_include_from_a_sibling_folder_with_dotdot(self):
+        self.put("src/shared/mod.sh", "mod() { echo shared; }\n")
+        self.script("demo", "# tpf:include ../shared/mod.sh\nmod\n")
+        code, out, _ = self.run_script(self.build_text("demo"))
+        self.assertEqual((code, out), (0, "shared\n"))
+        self.script("demo", "# tpf:include ../../outside.sh\n")
+        with self.assertRaisesRegex(TpfError, "outside src/"):
+            self.build_text("demo")
+
     def test_unknown_module_reports_file_and_line(self):
         self.script("demo", "echo hi\n# tpf:include nope\n")
         with self.assertRaisesRegex(TpfError, r"src/demo/main\.sh:3: unknown module 'nope'"):
