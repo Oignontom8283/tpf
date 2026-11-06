@@ -1,0 +1,3 @@
+version = "3.5"
+description = "Install and configure code-server (VS Code in the browser) on Termux, with Claude Code support"
+output = "install-code-server-termux.sh"
