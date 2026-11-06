@@ -1,0 +1,3 @@
+version = "1.0"
+description = "Start, stop and inspect code-server on Termux"
+output = "code-server.sh"
