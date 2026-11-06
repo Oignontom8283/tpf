@@ -274,10 +274,9 @@ class Project:
         else:
             if not MODULE_RE.match(arg):
                 raise TpfError(f"{where}: invalid module name {arg!r}")
-            target = self.lib / f"{arg}.sh"
-            if not target.is_file():
+            if not (self.lib / f"{arg}.sh").is_file():
                 raise TpfError(f"{where}: unknown module {arg!r} (no src/lib/{arg}.sh)")
-            target = target.resolve()
+            target = self._inside(self.lib, f"{arg}.sh", where)
             module = arg
         if target in ctx.stack:
             chain = " -> ".join(self.rel(p) for p in (*ctx.stack, target))

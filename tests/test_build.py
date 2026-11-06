@@ -110,6 +110,13 @@ class IncludeTests(ProjectCase):
         with self.assertRaisesRegex(TpfError, "outside src/"):
             self.build_text("demo")
 
+    def test_lib_module_symlinked_outside_src_is_refused(self):
+        self.put("elsewhere.sh", "echo no\n")
+        os.symlink(self.root / "elsewhere.sh", self.root / "src" / "lib" / "sneaky.sh")
+        self.script("demo", "# tpf:include sneaky\n")
+        with self.assertRaisesRegex(TpfError, "outside src/"):
+            self.build_text("demo")
+
     def test_module_with_shebang_and_main_without(self):
         self.put("src/lib/bad.sh", "#!/bin/bash\necho x\n")
         self.script("demo", "# tpf:include bad\n")
