@@ -34,7 +34,7 @@ on_exit() { _TPF_EXIT_CMDS+=("$1"); }
 _tpf_exit() {
     local status=$? i
     trap - EXIT
-    if [ -n "${_TASK_PID:-}" ]; then kill "$_TASK_PID" 2>/dev/null || true; fi
+    if [ -n "${_TASK_PID:-}" ]; then _ui_kill_tree "$_TASK_PID"; fi
     _ui_cleanup
     for ((i = ${#_TPF_EXIT_CMDS[@]} - 1; i >= 0; i--)); do
         eval "${_TPF_EXIT_CMDS[i]}" || true

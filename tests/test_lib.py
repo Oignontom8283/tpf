@@ -194,6 +194,39 @@ class TaskTests(LibCase):
         self.assertFalse(os.path.exists(f"/proc/{pid}"), "the task process was left running")
 
 
+    def test_ctrl_c_stops_the_whole_process_tree(self):
+        # A task that starts a child which ignores signals, like apt starting dpkg.
+        pidfile = self.root / "child.pid"
+        tree = self.root / "tree.sh"
+        tree.write_text(
+            "trap '' HUP INT\n"
+            f"bash -c 'trap \"\" HUP INT; echo $$ > {pidfile}; exec sleep 31.9' &\n"
+            "wait\n")
+        path = self.build(f'log_init; task "Tree" bash {tree}\n')
+        code, out = self.run_pty(path, interrupt_after=1.5, timeout=15)
+        pid = int(pidfile.read_text())
+        self.addCleanup(lambda: os.path.exists(f"/proc/{pid}") and os.kill(pid, signal.SIGKILL))
+        self.assertEqual(code, 130, out)
+        for _ in range(20):
+            if not os.path.exists(f"/proc/{pid}"):
+                break
+            time.sleep(0.1)
+        self.assertFalse(os.path.exists(f"/proc/{pid}"), "a descendant of the task was left running")
+
+    def test_spin_run_prints_nothing_but_the_marker(self):
+        path = self.build('spin_run "Quiet" "$HOME/q.log" bash -c "echo hidden; exit 3"; echo "rc=$?"\n', includes=("core",))
+        code, out, err = self.run_plain(path)
+        self.assertIn("rc=3", out)
+        self.assertIn("[ .. ] Quiet", out)
+        self.assertNotIn("OK", out)
+        self.assertNotIn("hidden", out + err)
+        self.assertEqual((self.root / "q.log").read_text(), "hidden\n")
+        _, out = self.run_pty(self.build('spin_run "Quiet" "$HOME/q2.log" sleep 0.8; echo "rc=$?"\n', includes=("core",)))
+        self.assertIn("rc=0", out)
+        self.assertNotIn("[ OK ]", out)
+        self.assertEqual(strip(out).strip().split("\r")[-1].strip(), "rc=0")
+
+
 class QuestionTests(LibCase):
     def test_assume_answers_without_asking(self):
         path = self.build('std_opt "$@"; ask_yes_no "Go?" no && echo YES || echo NO\n', includes=("core", "args"))
