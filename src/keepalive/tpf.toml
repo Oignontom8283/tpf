@@ -1,0 +1,3 @@
+version = "2.0"
+description = "Keep Android from killing Termux (phantom process killer, Doze, lmkd) - root or adb"
+output = "termux-keepalive.sh"
