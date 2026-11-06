@@ -14,24 +14,23 @@ MAIN_TEMPLATE = """#!/data/data/com.termux/files/usr/bin/bash
 set -uo pipefail
 
 # tpf:include core
-# tpf:include ui
 # tpf:include args
+# tpf:include log
 
 usage() {{
-    cat <<'EOF'
-Usage: {name}.sh [options]
-
-Options:
-EOF
+    printf 'Usage: %s [options]\\n\\nOptions:\\n' "$TPF_NAME"
     std_usage
 }}
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        *) std_opt "$@" || die "Unknown option: $1 (try --help)"; shift "$STD_SHIFT" ;;
+        *) std_opt "$@" || die "Unknown option: $1 (try --help)"; shift "$STD_SHIFT"; continue ;;
     esac
+    shift
 done
 
+require_termux
+log_init
 step "{name}"
 ok "Nothing to do yet."
 """
