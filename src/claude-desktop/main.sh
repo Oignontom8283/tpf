@@ -520,7 +520,7 @@ if [ -f "$SHIM" ]; then PRE="$SHIM"; else PRE=""; fi
 TEST_OUT="$(env LD_PRELOAD="$PRE" timeout 60 "$MAIN_BIN" --no-sandbox --version 2>&1)"; rc=$?
 printf '%s\n' "$TEST_OUT" > "$LOG_DIR/selftest.log"
 if [ $rc -eq 0 ]; then
-    ok "The Electron binary runs: $(printf '%s' "$TEST_OUT" | head -n1)"
+    ok "The Electron binary runs: $(printf '%s' "$TEST_OUT" | tail -n1)"
     SELFTEST=1
 else
     SELFTEST=0

@@ -100,7 +100,7 @@ def resolve(seed_depends, index, provides):
             if p is None:
                 continue
             if p == "":
-                log(f"  [!] no Debian package found for: {' | '.join(alts)}")
+                log(f"[WARN] no Debian package found for: {' | '.join(alts)}")
                 continue
             if p not in seen:
                 seen.add(p)
@@ -140,17 +140,17 @@ def main():
     os.makedirs(debs, exist_ok=True)
 
     # --- Official Claude Desktop .deb (newest arm64) ------------------------
-    log("[*] Reading Anthropic's package index (arm64)...")
+    log("[INFO] Reading Anthropic's package index (arm64)...")
     idx = fetch(ANTHROPIC + "dists/stable/main/binary-arm64/Packages").decode("utf-8", "replace")
     cands = [p for p in parse_packages(idx) if p.get("Package") == "claude-desktop"]
     if not cands:
         raise RuntimeError("claude-desktop not found in Anthropic's arm64 index")
     cands.sort(key=lambda p: vkey(p.get("Version", "0")))
     cd = cands[-1]
-    log(f"[*] Claude Desktop {cd.get('Version')}: downloading {cd['Filename']}")
+    log(f"[INFO] Claude Desktop {cd.get('Version')}: downloading {cd['Filename']}")
     cd_path = os.path.join(work, "claude-desktop.deb")
     download(ANTHROPIC + cd["Filename"], cd_path, cd.get("SHA256"))
-    log("[OK] Claude Desktop .deb downloaded and verified.")
+    log("[ OK ] Claude Desktop .deb downloaded and verified.")
 
     # The .deb's own dependency list is the source of truth for libraries.
     depends = ""
@@ -160,10 +160,10 @@ def main():
             depends += ("," if depends else "") + out.stdout.strip()
     if not depends:   # fall back on the repository index
         depends = cd.get("Pre-Depends", "") + "," + cd.get("Depends", "")
-    log(f"[*] Dependencies of the app: {depends}")
+    log(f"[INFO] Dependencies of the app: {depends}")
 
     # --- Debian libraries ----------------------------------------------------
-    log(f"[*] Reading Debian '{release}' package index (arm64, ~8 MB)...")
+    log(f"[INFO] Reading Debian '{release}' package index (arm64, ~8 MB)...")
     raw = fetch(DEBIAN + f"dists/{release}/main/binary-arm64/Packages.xz")
     text = lzma.decompress(raw).decode("utf-8", "replace")
     pkgs = parse_packages(text)
@@ -175,7 +175,7 @@ def main():
             if n and n not in provides:
                 provides[n] = p["Package"]
     names = resolve(depends, index, provides)
-    log(f"[*] {len(names)} library packages to download.")
+    log(f"[INFO] {len(names)} library packages to download.")
 
     listing = []
     for i, n in enumerate(names, 1):
@@ -188,7 +188,7 @@ def main():
         f.write("\n".join(listing) + "\n")
     with open(os.path.join(work, "version.txt"), "w") as f:
         f.write(cd.get("Version", "unknown") + "\n")
-    log("[OK] All packages downloaded.")
+    log("[ OK ] All packages downloaded.")
 
 
 if __name__ == "__main__":
