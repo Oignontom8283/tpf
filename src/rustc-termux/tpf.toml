@@ -1,0 +1,4 @@
+version = "2.0"
+description = "Rust on Termux with a fake rustup: extra targets, linker packs, root tweaks"
+output = "rustc-termux.sh"
+shellcheck = "error"
