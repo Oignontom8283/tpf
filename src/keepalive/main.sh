@@ -1,12 +1,12 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # Keep Android from killing Termux (Android 12+), with root or without it.
 #
-#   termux-keepalive.sh setup    install adb and pair the device (once, no root)
-#   termux-keepalive.sh on       turn the protection on
-#   termux-keepalive.sh off      restore the original Android settings
-#   termux-keepalive.sh status   show the current state
+#   termux-keepalive.sh install   install adb and pair the device (once, no root)   [setup]
+#   termux-keepalive.sh start     turn the protection on                              [on]
+#   termux-keepalive.sh stop      restore the original Android settings               [off]
+#   termux-keepalive.sh status    show the current state
 #
-# What "on" does (with root or adb):
+# What "start" does (with root or adb):
 #   1. Disables the "phantom process killer" (Android 12+) that kills the child
 #      processes of Termux (servers, Electron, builds). Same as "Disable child
 #      process restrictions" in the developer options.
@@ -21,14 +21,13 @@
 # adb connects to the device itself through "Wireless debugging".
 #
 # Not handled here (do it by hand): vendor battery managers and "auto-start"
-# lists have their own app killer; a reboot resets some settings, run "on" again.
+# lists have their own app killer; a reboot resets some settings, run "start" again.
 #
 # Environment: TERMUX_KEEPALIVE_MODE=root|adb forces the access mode.
 set -u
 
 # tpf:include core
-# tpf:include args
-# tpf:include log
+# tpf:include cmd
 
 PKG="com.termux"
 STATE_DIR="$HOME/.cache/termux-keepalive"
@@ -40,20 +39,6 @@ GUARD_SH="$STATE_DIR/guard.sh"
 
 SDK="$(getprop ro.build.version.sdk 2>/dev/null)"
 is_uint "$SDK" || SDK=0
-
-usage() {
-    cat <<USAGE
-Usage: ${0##*/} [options] setup|on|off|status
-
-  setup    install adb and pair the device (once, no root)
-  on       turn the protection on
-  off      restore the original Android settings
-  status   show the current state
-
-Options:
-USAGE
-    std_usage
-}
 
 # ---------------------------------------------------------------------------
 # Access to the Android shell: adb to the device itself, or root
@@ -71,7 +56,7 @@ adb_try_mdns() {   # finds the wireless-debugging port by itself
 }
 
 adb_connect() {
-    have adb || { err "adb is not installed. Run first: $0 setup"; return 1; }
+    have adb || { err "adb is not installed. Run first: $0 install"; return 1; }
     adb start-server >/dev/null 2>&1
     adb_ready && return 0
     adb_try_mdns && return 0
@@ -172,9 +157,9 @@ guard_stop() {
 # ---------------------------------------------------------------------------
 # setup
 # ---------------------------------------------------------------------------
-do_setup() {
+cmd_install() {
     if [ "${TERMUX_KEEPALIVE_MODE:-auto}" != "adb" ] && root_available; then
-        ok "Root available: no adb pairing needed. Run: $0 on"
+        ok "Root available: no adb pairing needed. Run: $0 start"
         return 0
     fi
     task "Installing adb (android-tools)" pkg install -y android-tools || return 1
@@ -205,16 +190,16 @@ GUIDE
         adb_try_mdns
     fi
     if adb_ready; then
-        ok "Connected. You can run: $0 on"
+        ok "Connected. You can run: $0 start"
     else
-        warn "Not connected yet. Run '$0 setup' or '$0 on' again (the port changes whenever Wi-Fi is toggled)."
+        warn "Not connected yet. Run '$0 install' or '$0 start' again (the port changes whenever Wi-Fi is toggled)."
     fi
 }
 
 # ---------------------------------------------------------------------------
 # on / off
 # ---------------------------------------------------------------------------
-do_on() {
+cmd_start() {
     [ "$SDK" -ge 31 ] || warn "Android < 12: there is no phantom process killer, only steps 3 to 5 apply."
     ensure_access || return 1
 
@@ -240,13 +225,13 @@ do_on() {
     guard_start
     wake_lock
     ok "Protection on."
-    do_status
+    cmd_status
     echo
     warn "Also to do by hand: Settings > Apps > Termux > Battery > \"Unrestricted\","
     warn "and allow auto-start / background in your vendor's battery manager."
 }
 
-do_off() {
+cmd_stop() {
     ensure_access || return 1
     local monitor="" maxp=""
     if [ -s "$STATE_FILE" ]; then
@@ -271,7 +256,7 @@ do_off() {
     if have termux-wake-unlock; then termux-wake-unlock >/dev/null 2>&1; fi
     rm -f "$STATE_FILE"
     ok "Original settings restored. Android can kill Termux again."
-    do_status
+    cmd_status
 }
 
 # ---------------------------------------------------------------------------
@@ -279,14 +264,14 @@ do_off() {
 # ---------------------------------------------------------------------------
 status_line() { printf '%-34s : %s\n' "$1" "$2"; }
 
-do_status() {
+cmd_status() {
     step "State (Android $(getprop ro.build.version.release), SDK $SDK)"
     if [ -z "$MODE" ]; then
         if [ "${TERMUX_KEEPALIVE_MODE:-auto}" != "adb" ] && root_available; then MODE="root"
         elif adb_ready; then MODE="adb"; fi
     fi
     if [ -z "$MODE" ]; then
-        warn "Neither root nor adb: the Android state cannot be read ($0 setup / on)."
+        warn "Neither root nor adb: the Android state cannot be read ($0 install / start)."
         return 0
     fi
     local mon max wl bg
@@ -311,22 +296,14 @@ do_status() {
 }
 
 # ---------------------------------------------------------------------------
-COMMAND=""
-while [ $# -gt 0 ]; do
-    case "$1" in
-        setup | on | off | status | help) COMMAND="$1" ;;
-        *) std_opt "$@" || die "Unknown argument: $1 (try --help)"; shift "$STD_SHIFT"; continue ;;
-    esac
-    shift
-done
-
 mkdir -p "$STATE_DIR"
-log_init
-case "$COMMAND" in
-    setup) do_setup ;;
-    on) do_on ;;
-    off) do_off ;;
-    status) do_status ;;
-    help) usage ;;
-    *) usage >&2; exit 2 ;;
-esac
+
+add_command install "Install adb and pair this device (not needed with root)"
+add_command start   "Turn the protection on"
+add_command stop    "Restore the original Android settings"
+add_command status  "Show the current state"
+add_alias setup install
+add_alias on start
+add_alias off stop
+
+tpf_main "$@"
