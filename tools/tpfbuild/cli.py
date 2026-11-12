@@ -47,7 +47,7 @@ def _select(project: Project, names: list[str]) -> list[Script]:
     by_key = {s.key: s for s in scripts}
     missing = [n for n in names if n not in by_key]
     if missing:
-        raise TpfError(f"unknown script(s): {', '.join(missing)} (see ./tpf list)")
+        raise TpfError(f"unknown script(s): {', '.join(missing)} (see ./tpf.py list)")
     return [by_key[n] for n in names]
 
 
@@ -105,7 +105,7 @@ def cmd_check(project: Project, args: argparse.Namespace) -> int:
                 status = "MISSING dist file"
                 problems += 1
             elif target.read_text(encoding="utf-8") != result.text:
-                status = "STALE dist file (run ./tpf build)"
+                status = "STALE dist file (run ./tpf.py build)"
                 problems += 1
         if script.publish:
             expected.add(script.output)
@@ -149,7 +149,7 @@ def cmd_new(project: Project, args: argparse.Namespace) -> int:
     (directory / "tpf.toml").write_text(TOML_TEMPLATE.format(description=args.description), encoding="utf-8")
     (directory / "main.sh").write_text(
         MAIN_TEMPLATE.format(name=args.name, description=args.description), encoding="utf-8")
-    print(f"created src/{args.name}/ (edit it, then run ./tpf build {args.name})")
+    print(f"created src/{args.name}/ (edit it, then run ./tpf.py build {args.name})")
     return 0
 
 
@@ -166,7 +166,7 @@ def cmd_clean(project: Project, args: argparse.Namespace) -> int:
 
 
 def make_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="tpf", description="Package the shell installers of this repository.")
+    parser = argparse.ArgumentParser(prog="tpf.py", description="Package the shell installers of this repository.")
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2],
                         help="repository root (default: the checkout containing this tool)")
     sub = parser.add_subparsers(dest="command", required=True)

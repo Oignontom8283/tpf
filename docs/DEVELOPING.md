@@ -2,9 +2,9 @@
 
 ## How a script is built
 
-A tool is a folder `src/<name>/` with a `tpf.toml` and a `main.sh`. `./tpf build`
+A tool is a folder `src/<name>/` with a `tpf.toml` and a `main.sh`. `./tpf.py build`
 glues `main.sh`, the shared modules and the other files it names into one script
-in `dist/`, checks it, and writes it. `./tpf check` rebuilds in memory and
+in `dist/`, checks it, and writes it. `./tpf.py check` rebuilds in memory and
 compares with `dist/`, so a forgotten rebuild is caught.
 
 `tpf.toml`:
@@ -100,8 +100,8 @@ What is **not** run by the tests: the `install`, `reinstall` and `uninstall` flo
 
 ## Habits
 
-- Edit `src/`, run `./tpf build`, commit the source and the rebuilt `dist/` together.
-- Do not edit `dist/` by hand: `./tpf check` will flag it.
+- Edit `src/`, run `./tpf.py build`, commit the source and the rebuilt `dist/` together.
+- Do not edit `dist/` by hand: `./tpf.py check` will flag it.
 - Keep one commit to one idea; run the tests before committing.
 - Run long steps through `task` (foreground, logged), and say what they need
   (network, storage) before starting them.

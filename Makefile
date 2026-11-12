@@ -1,10 +1,10 @@
 .PHONY: build check test
 
 build:
-	./tpf build
+	./tpf.py build
 
 check:
-	./tpf check
+	./tpf.py check
 
 test:
 	python3 -m unittest discover -s tests

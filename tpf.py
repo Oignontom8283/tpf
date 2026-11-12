@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Launcher: ./tpf build | check | list | new | clean  (see ./tpf --help)."""
+"""Launcher: ./tpf.py build | check | list | new | clean  (see ./tpf.py --help)."""
 import sys
 from pathlib import Path
 

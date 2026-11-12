@@ -62,13 +62,29 @@ terminal the default answer is used.
 All tags have the same width, except `[ERROR]`, which is longer on purpose.
 See [docs/STYLE.md](docs/STYLE.md).
 
+## How to build the scripts
+
+You only need to build when you change something in `src/`. The scripts of
+`dist/` are already built, and they are the only thing to copy to a device.
+
+```sh
+pkg install python shellcheck   # once (shellcheck is optional but recommended)
+python3 tpf.py build            # src/  ->  dist/   (or: ./tpf.py build, or: make build)
+python3 tpf.py check            # is dist/ up to date, and is every script valid?
+```
+
+`build` glues each tool's `main.sh`, its parts and the shared modules into one
+standalone script, checks it (`bash -n`, then `shellcheck`) and only then writes
+it to `dist/`. If a check fails nothing is written. `tpf.py build code-server`
+builds one tool; `tpf.py list` shows the tools and the modules they use.
+
 ## Working on the repository
 
 ```sh
-./tpf build      # rebuild dist/ from src/
-./tpf check      # dist/ up to date? every script valid (bash -n, shellcheck)?
-./tpf list       # scripts and the modules they use
-./tpf new NAME   # start a new tool from a template
+./tpf.py build      # rebuild dist/ from src/
+./tpf.py check      # dist/ up to date? every script valid (bash -n, shellcheck)?
+./tpf.py list       # scripts and the modules they use
+./tpf.py new NAME   # start a new tool from a template
 python3 -m unittest discover -s tests
 ```
 
@@ -83,7 +99,7 @@ docs/           style and developer documentation
 
 See [docs/DEVELOPING.md](docs/DEVELOPING.md) for how the packager works, the API
 of the modules and how to add a tool. A change to `src/` is always committed
-together with the rebuilt `dist/` so that `./tpf check` passes at every commit.
+together with the rebuilt `dist/` so that `./tpf.py check` passes at every commit.
 
 ## License
 
