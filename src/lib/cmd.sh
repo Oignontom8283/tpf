@@ -18,6 +18,8 @@
 #   TOOL_OPTIONS_HELP        text for the tool's own options, printed with the common ones
 #   TOOL_DEFAULT_COMMAND     command used when none is given (default: help)
 #   TOOL_LOG_DIR             log directory (default: ~/.cache/tpf/<name>)
+#   TOOL_RAW_COMMANDS        commands whose words and options after the command name are
+#                            passed to them untouched (they have their own options)
 #
 # "reinstall" exists as soon as install and uninstall do: uninstall (TPF_KEEP_DATA=1
 # tells it to keep the user's data), then install. A tool may define its own.
@@ -58,6 +60,12 @@ _cmd_aliases_of() {   # command -> "a, b" (empty if none)
         if [ "${pair#*=}" = "$1" ]; then out="${out:+$out, }${pair%%=*}"; fi
     done
     printf '%s' "$out"
+}
+
+_cmd_is_raw() {
+    local name
+    for name in ${TOOL_RAW_COMMANDS:-}; do [ "$name" = "$(_cmd_resolve "$1")" ] && return 0; done
+    return 1
 }
 
 _cmd_known() {
@@ -101,6 +109,10 @@ tpf_main() {
     TPF_SCRIPT="${0##*/}"
     CMD_ARGS=()
     while [ $# -gt 0 ]; do
+        if [ -n "$command_word" ] && _cmd_is_raw "$command_word"; then
+            CMD_ARGS+=("$@")
+            break
+        fi
         if [ "$only_args" = 1 ] || [ "${1#-}" = "$1" ]; then
             if [ -z "$command_word" ]; then command_word="$1"; else CMD_ARGS+=("$1"); fi
             shift

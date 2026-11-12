@@ -127,6 +127,20 @@ class CmdTests(LibCase):
         self.assertRegex(self.run_plain(path, "help")[1], r"(?m)^  install\s+Install the tool \(also: setup, add\)$")
         self.assertNotRegex(self.run_plain(path, "help")[1], r"(?m)^  setup\s")
 
+    def test_raw_commands_receive_their_options_untouched(self):
+        body = TOOL.replace("tpf_main", 'TOOL_RAW_COMMANDS="do-thing"\ntpf_main')
+        path = self.tool(body)
+        code, out, _ = self.run_plain(path, "do-thing", "add", "--ndk", "--port", "-x", "--yes")
+        self.assertEqual((code, out), (0, "do-thing [add --ndk --port -x --yes]\n"))
+        # options before the command are still processed; other commands are unaffected
+        self.assertIn("install args=[] keep=0 port=7", self.run_plain(path, "--port", "7", "install")[1])
+        code, _, err = self.run_plain(path, "install", "--ndk")
+        self.assertEqual(code, 2)
+        self.assertIn("Unknown option: --ndk", err)
+        # an alias of a raw command is raw too
+        alias = body.replace("tpf_main", 'add_alias dt do-thing\ntpf_main')
+        self.assertIn("do-thing [--ndk]", self.run_plain(self.tool(alias), "dt", "--ndk")[1])
+
     def test_log_directory_is_created_for_real_commands_only(self):
         path = self.tool()
         self.run_plain(path, "help")
