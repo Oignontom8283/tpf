@@ -119,6 +119,14 @@ class CmdTests(LibCase):
         self.assertEqual(code, 2)
         self.assertIn("cmd_ghost is not defined", err)
 
+    def test_aliases_run_the_command_and_show_in_the_help(self):
+        body = TOOL.replace("tpf_main", 'add_alias setup install\nadd_alias add install\ntpf_main')
+        path = self.tool(body)
+        self.assertIn("install args=[x]", self.run_plain(path, "setup", "x")[1])
+        self.assertIn("install args=[]", self.run_plain(path, "add")[1])
+        self.assertRegex(self.run_plain(path, "help")[1], r"(?m)^  install\s+Install the tool \(also: setup, add\)$")
+        self.assertNotRegex(self.run_plain(path, "help")[1], r"(?m)^  setup\s")
+
     def test_log_directory_is_created_for_real_commands_only(self):
         path = self.tool()
         self.run_plain(path, "help")

@@ -9,6 +9,7 @@
 #   cmd_uninstall() { ...; }
 #   add_command install   "Install the tool"
 #   add_command uninstall "Remove the tool"
+#   add_alias   setup install        # optional: another word for a command
 #   tpf_main "$@"
 #
 # Optional hooks and variables:
@@ -28,6 +29,7 @@
 
 _TPF_CMDS=()
 _TPF_CMD_HELP=()
+_TPF_ALIASES=()      # "alias=command"
 TOOL_SHIFT=1
 TPF_KEEP_DATA=0
 CMD_ARGS=()
@@ -38,6 +40,26 @@ add_command() {
     _TPF_CMD_HELP+=("$2")
 }
 
+# add_alias ALIAS COMMAND
+add_alias() { _TPF_ALIASES+=("$1=$2"); }
+
+# _cmd_resolve WORD: prints the command a word stands for (itself if not an alias)
+_cmd_resolve() {
+    local pair
+    for pair in "${_TPF_ALIASES[@]}"; do
+        if [ "${pair%%=*}" = "$1" ]; then printf '%s' "${pair#*=}"; return 0; fi
+    done
+    printf '%s' "$1"
+}
+
+_cmd_aliases_of() {   # command -> "a, b" (empty if none)
+    local pair out=""
+    for pair in "${_TPF_ALIASES[@]}"; do
+        if [ "${pair#*=}" = "$1" ]; then out="${out:+$out, }${pair%%=*}"; fi
+    done
+    printf '%s' "$out"
+}
+
 _cmd_known() {
     local name
     for name in "${_TPF_CMDS[@]}"; do [ "$name" = "$1" ] && return 0; done
@@ -45,10 +67,11 @@ _cmd_known() {
 }
 
 cmd_help() {
-    local i
+    local i extra
     printf 'Usage: %s [options] <command> [arguments]\n\nCommands:\n' "${TPF_SCRIPT:-$TPF_NAME}"
     for i in "${!_TPF_CMDS[@]}"; do
-        printf '  %-12s %s\n' "${_TPF_CMDS[i]}" "${_TPF_CMD_HELP[i]}"
+        extra="$(_cmd_aliases_of "${_TPF_CMDS[i]}")"
+        printf '  %-12s %s%s\n' "${_TPF_CMDS[i]}" "${_TPF_CMD_HELP[i]}" "${extra:+ (also: $extra)}"
     done
     printf '  %-12s %s\n' help "Show this help"
     printf '  %-12s %s\n' version "Print the version"
@@ -99,6 +122,7 @@ tpf_main() {
         add_command reinstall "Remove (keeping your data), then install again"
     fi
     command_word="${command_word:-${TOOL_DEFAULT_COMMAND:-help}}"
+    command_word="$(_cmd_resolve "$command_word")"
     case "$command_word" in
         help | version) ;;
         *)
