@@ -49,7 +49,7 @@ class LibCase(unittest.TestCase):
 
     def run_plain(self, path, *args, env=None, stdin=None):
         """Run with pipes (no terminal): output is not a TTY."""
-        full = {**os.environ, "HOME": str(self.root), "TERM": "xterm"}
+        full = {**{k: v for k, v in os.environ.items() if not k.startswith("TPF_")}, "HOME": str(self.root), "TERM": "xterm"}
         full.pop("NO_COLOR", None)
         full.update(env or {})
         done = subprocess.run(["bash", str(path), *args], capture_output=True, text=True,
@@ -59,7 +59,7 @@ class LibCase(unittest.TestCase):
 
     def run_pty(self, path, *args, keys=b"", env=None, timeout=20, interrupt_after=None):
         """Run under a pseudo-terminal; returns (status, output)."""
-        full = {**os.environ, "HOME": str(self.root), "TERM": "xterm"}
+        full = {**{k: v for k, v in os.environ.items() if not k.startswith("TPF_")}, "HOME": str(self.root), "TERM": "xterm"}
         full.pop("NO_COLOR", None)
         full.update(env or {})
         pid, fd = pty.fork()
@@ -129,6 +129,12 @@ class StyleTests(LibCase):
         self.assertRegex(text, r"INFO\s+hello")
         self.assertRegex(text, r"ERROR\s+bad")
         self.assertNotIn("\x1b", text)
+
+    def test_the_log_directory_is_not_exported_to_child_processes(self):
+        # A long-running program started by a tool (a server) must not inherit it.
+        path = self.build('log_init; bash -c \'echo "child sees: ${TPF_LOG_DIR:-nothing}"\'\n')
+        code, out, _ = self.run_plain(path)
+        self.assertEqual(out, "child sees: nothing\n")
 
     def test_die_exits_with_one_and_shows_the_log_directory(self):
         path = self.build('log_init; die "stop here"; echo not-reached\n')
@@ -239,7 +245,7 @@ class QuestionTests(LibCase):
     def test_no_terminal_uses_the_default_with_a_warning(self):
         path = self.build('ask_yes_no "Go?" yes && echo YES || echo NO\n', includes=("core",))
         env_less = subprocess.run(["setsid", "bash", str(path)], capture_output=True, text=True,
-                                  stdin=subprocess.DEVNULL, env={**os.environ, "HOME": str(self.root)})
+                                  stdin=subprocess.DEVNULL, env={**{k: v for k, v in os.environ.items() if not k.startswith("TPF_")}, "HOME": str(self.root)})
         self.assertIn("YES", env_less.stdout)
         self.assertIn("default answer", env_less.stdout)
 

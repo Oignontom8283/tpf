@@ -38,7 +38,7 @@ class PkgCase(unittest.TestCase):
             "#!/usr/bin/env bash\nset -uo pipefail\n# tpf:include pkg\nlog_dir=$HOME/logs; mkdir -p \"$log_dir\"; TPF_LOG_DIR=$log_dir\n" + body)
         script = self.root / "demo.sh"
         script.write_text(Project(self.root).build("demo").text)
-        env = {**os.environ, "HOME": str(self.root), "PATH": f"{self.bin}:{os.environ['PATH']}", "TERM": "xterm"}
+        env = {**{k: v for k, v in os.environ.items() if not k.startswith("TPF_")}, "HOME": str(self.root), "PATH": f"{self.bin}:{os.environ['PATH']}", "TERM": "xterm"}
         env.pop("NO_COLOR", None)
         done = subprocess.run(["bash", str(script)], capture_output=True, text=True, env=env,
                               stdin=subprocess.DEVNULL, timeout=30)

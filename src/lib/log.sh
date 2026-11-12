@@ -8,5 +8,4 @@
 log_init() {
     TPF_LOG_DIR="${TPF_LOG_DIR:-${1:-$HOME/.cache/tpf/$TPF_NAME}}"
     mkdir -p "$TPF_LOG_DIR" 2>/dev/null || { warn "Cannot create the log directory $TPF_LOG_DIR"; TPF_LOG_DIR=""; return 0; }
-    export TPF_LOG_DIR
 }

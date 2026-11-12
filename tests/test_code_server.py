@@ -82,7 +82,7 @@ class CodeServerCase(unittest.TestCase):
         self.conf.write_text("".join(f"{k}={shlex.quote(str(v))}\n" for k, v in values.items()))
 
     def run_cs(self, *args, timeout=60):
-        env = {**os.environ, "HOME": str(self.home), "CS_CONF": str(self.conf), "TERM": "dumb",
+        env = {**{k: v for k, v in os.environ.items() if not k.startswith("TPF_")}, "HOME": str(self.home), "CS_CONF": str(self.conf), "TERM": "dumb",
                "TPF_CS_PROC_PATTERN": self.pattern, "PATH": f"{self.home / 'bin'}:{os.environ['PATH']}"}
         env.pop("VSCODE_IPC_HOOK_CLI", None)
         env.pop("TERM_PROGRAM", None)

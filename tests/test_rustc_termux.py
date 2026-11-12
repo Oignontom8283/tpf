@@ -36,7 +36,7 @@ class ManageCase(unittest.TestCase):
         self.script.write_text(self.script_text)
 
     def run_rt(self, *args):
-        env = {**os.environ, "HOME": str(self.home), "TERM": "dumb"}
+        env = {**{k: v for k, v in os.environ.items() if not k.startswith("TPF_")}, "HOME": str(self.home), "TERM": "dumb"}
         done = subprocess.run(["bash", str(self.script), *args], capture_output=True, text=True, env=env,
                               stdin=subprocess.DEVNULL, timeout=120)
         return done.returncode, done.stdout, done.stderr
