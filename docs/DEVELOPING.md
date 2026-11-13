@@ -46,11 +46,10 @@ that depend on the moment or the machine. Every script starts with:
 #   Packager   : tpf.py 1.1
 #   Built      : 2026-11-13 09:07:23 UTC             volatile
 #   Python     : 3.14.10 (CPython) on Android aarch64   volatile
-#   Git        : 0c9a7a6 on main (clean)             volatile; omitted outside a git checkout
+#   Git        : 0c9a7a6 on main                     volatile; omitted outside a git checkout
 ```
 
-`Git` is the commit the build started from, and says whether `src/`, `tools/` or
-`project.toml` had uncommitted changes. The three volatile lines are ignored when
+`Git` is the commit (and branch) the build started from. The three volatile lines are ignored when
 `build` and `check` compare a script with its `dist/` file: a later date is never
 "stale", and `build` does not rewrite a file that only differs by them. Set
 `SOURCE_DATE_EPOCH` to fix the build date (reproducible output).

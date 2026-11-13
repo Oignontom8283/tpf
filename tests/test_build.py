@@ -360,16 +360,16 @@ class HeaderTests(ProjectCase):
         self.assertNotIn("#   Git", self.header())
 
     @unittest.skipUnless(shutil.which("git"), "git not installed")
-    def test_git_line_with_commit_branch_and_state(self):
+    def test_git_line_with_commit_and_branch(self):
         git = lambda *a: subprocess.run(["git", *a], cwd=self.root, check=True, capture_output=True)  # noqa: E731
         self.script("demo", "echo x\n")
         git("init", "-q", "-b", "trunk")
         git("add", "-A")
         git("-c", "user.name=t", "-c", "user.email=t@example.org", "commit", "-q", "-m", "first")
         head = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=self.root, capture_output=True, text=True).stdout.strip()
-        self.assertIn(f"#   Git        : {head} on trunk (clean)\n", self.header())
-        self.put("src/demo/main.sh", SHEBANG + "echo edited\n")
-        self.assertIn(f"#   Git        : {head} on trunk (with uncommitted changes)\n", self.header())
+        self.assertIn(f"#   Git        : {head} on trunk\n", self.header())
+        self.put("src/demo/main.sh", SHEBANG + "echo edited\n")  # uncommitted changes are not reported
+        self.assertIn(f"#   Git        : {head} on trunk\n", self.header())
 
 
 class CommandTests(ProjectCase):

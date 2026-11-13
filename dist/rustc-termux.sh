@@ -9,9 +9,9 @@
 #   Modules    : core, ui, cmd, args, log, pkg
 #   Sources    : sha256:9debd51e23d426b9
 #   Packager   : tpf.py 1.1
-#   Built      : 2026-11-13 09:07:59 UTC
+#   Built      : 2026-11-13 09:16:04 UTC
 #   Python     : 3.14.10 (CPython) on Android aarch64
-#   Git        : 0c9a7a6 on main (with uncommitted changes)
+#   Git        : ac3b211 on main
 #
 # Generated file: do not edit. Change src/ and run ./tpf.py build.
 # ============================================================================

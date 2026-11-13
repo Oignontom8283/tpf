@@ -265,10 +265,9 @@ class Project:
             if rev.returncode != 0:
                 return None
             branch = git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip() or "?"
-            dirty = git("status", "--porcelain", "--", "src", "tools", "project.toml").stdout.strip()
         except (OSError, subprocess.SubprocessError):
             return None
-        return f"{rev.stdout.strip()} on {branch} ({'with uncommitted changes' if dirty else 'clean'})"
+        return f"{rev.stdout.strip()} on {branch}"
 
     @staticmethod
     def _build_date() -> str:
