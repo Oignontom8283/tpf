@@ -1,0 +1,4 @@
+name = "tpf"
+title = "Termux Pocket Forge"
+repository = "https://github.com/Oignontom8283/tpf"
+license = "MIT"

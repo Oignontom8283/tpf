@@ -75,7 +75,9 @@ python3 tpf.py check            # is dist/ up to date, and is every script valid
 
 `build` glues each tool's `main.sh`, its parts and the shared modules into one
 standalone script, checks it (`bash -n`, then `shellcheck`) and only then writes
-it to `dist/`. If a check fails nothing is written. `tpf.py build code-server`
+it to `dist/`. If a check fails nothing is written. The top of every generated
+script says which project and tool it comes from, its modules, the source hash, the
+packager and Python versions, the build date and the git commit. `tpf.py build code-server`
 builds one tool; `tpf.py list` shows the tools and the modules they use.
 
 ## Working on the repository

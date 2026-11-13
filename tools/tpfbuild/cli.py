@@ -6,8 +6,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from .core import (KEY_RE, BuildResult, Project, Script, TpfError, validate,
-                   write_atomic)
+from .core import (KEY_RE, BuildResult, Project, Script, TpfError, strip_volatile,
+                   validate, write_atomic)
 
 MAIN_TEMPLATE = """#!/data/data/com.termux/files/usr/bin/bash
 # {name} - {description}
@@ -82,7 +82,7 @@ def cmd_build(project: Project, args: argparse.Namespace) -> int:
             print(f"skip  {script.key} (dist = false)")
             continue
         target = project.dist / script.output
-        unchanged = target.is_file() and target.read_text(encoding="utf-8") == result.text
+        unchanged = target.is_file() and strip_volatile(target.read_text(encoding="utf-8")) == strip_volatile(result.text)
         if not unchanged:
             write_atomic(target, result.text)
         print(f"{'same' if unchanged else 'built'}  dist/{script.output}  ({script.name} {script.version})")
@@ -104,7 +104,7 @@ def cmd_check(project: Project, args: argparse.Namespace) -> int:
             if not target.is_file():
                 status = "MISSING dist file"
                 problems += 1
-            elif target.read_text(encoding="utf-8") != result.text:
+            elif strip_volatile(target.read_text(encoding="utf-8")) != strip_volatile(result.text):
                 status = "STALE dist file (run ./tpf.py build)"
                 problems += 1
         if script.publish:

@@ -33,11 +33,33 @@ Includes cannot form a cycle and cannot leave `src/` (symbolic links included).
 Sources must be UTF-8, LF, without NUL, and end with a newline. Only `main.sh`
 starts with `#!`.
 
-The output is a pure function of the sources (no date, no machine data); its
-header carries a hash of them. `TPF_NAME`, `TPF_VERSION` and `TPF_SOURCE_HASH` are
-available to the script. `build` validates every script (`bash -n`, then
-`shellcheck` at the level of the toml) before writing anything, so a broken
-source never replaces a good `dist/` file.
+The output is a pure function of the sources, apart from three header lines
+that depend on the moment or the machine. Every script starts with:
+
+```
+#   Project    : tpf - Termux Pocket Forge          (from project.toml)
+#   Repository : https://github.com/Oignontom8283/tpf
+#   License    : MIT
+#   Tool       : code-server 4.0   (src/code-server/)
+#   Modules    : core, cmd, pkg                      (shared modules used)
+#   Sources    : sha256:...                          (hash of every source file used)
+#   Packager   : tpf.py 1.1
+#   Built      : 2026-11-13 09:07:23 UTC             volatile
+#   Python     : 3.14.10 (CPython) on Android aarch64   volatile
+#   Git        : 0c9a7a6 on main (clean)             volatile; omitted outside a git checkout
+```
+
+`Git` is the commit the build started from, and says whether `src/`, `tools/` or
+`project.toml` had uncommitted changes. The three volatile lines are ignored when
+`build` and `check` compare a script with its `dist/` file: a later date is never
+"stale", and `build` does not rewrite a file that only differs by them. Set
+`SOURCE_DATE_EPOCH` to fix the build date (reproducible output).
+
+`project.toml` at the root is optional: `name`, `title`, `repository`, `license`
+(single-line strings; the name defaults to the folder). `TPF_NAME`, `TPF_VERSION`
+and `TPF_SOURCE_HASH` are available to the script itself. `build` validates every
+script (`bash -n`, then `shellcheck` at the level of the toml) before writing
+anything, so a broken source never replaces a good `dist/` file.
 
 ## The modules (`src/lib/`)
 

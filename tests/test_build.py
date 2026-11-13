@@ -1,6 +1,7 @@
 """Tests of the packager (tools/tpfbuild). Run: python3 -m unittest discover -s tests"""
 
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -11,8 +12,8 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 
-from tpfbuild import cli, core  # noqa: E402
-from tpfbuild.core import Project, TpfError  # noqa: E402
+from tpfbuild import __version__, cli, core  # noqa: E402
+from tpfbuild.core import Project, TpfError, strip_volatile  # noqa: E402
 
 SHEBANG = "#!/usr/bin/env bash\n"
 HAS_SHELLCHECK = shutil.which("shellcheck") is not None
@@ -260,11 +261,11 @@ class OutputTests(ProjectCase):
         self.put("src/lib/m.sh", "m() { :; }\n")
         self.script("demo", "# tpf:include m\nm\n")
         first = self.build_text("demo")
-        self.assertEqual(first, self.build_text("demo"))
+        self.assertEqual(strip_volatile(first), strip_volatile(self.build_text("demo")))
         self.assertIn('TPF_NAME=demo', first)
         self.assertIn("TPF_VERSION=1.0", first)
         self.put("src/lib/m.sh", "m() { echo changed; }\n")
-        self.assertNotEqual(first, self.build_text("demo"))
+        self.assertNotEqual(strip_volatile(first), strip_volatile(self.build_text("demo")))
 
     def test_version_comes_from_the_metadata(self):
         self.script("demo", 'echo "$TPF_NAME $TPF_VERSION"\n', version="2.5")
@@ -279,6 +280,96 @@ class OutputTests(ProjectCase):
         code, out, _ = self.run_script(text)
         self.assertEqual((code, out), (0, "from-module\n"))
         self.assertNotIn("# tpf:", text)
+
+
+class HeaderTests(ProjectCase):
+    def header(self, key="demo"):
+        return self.build_text(key).split("# shellcheck disable=SC2034")[0]
+
+    def test_header_tells_where_the_script_comes_from_and_how_it_was_built(self):
+        self.put("project.toml", 'name = "proj"\ntitle = "Big Project"\nrepository = "https://example.org/p"\nlicense = "MIT"\n')
+        self.put("src/lib/m.sh", "m() { :; }\n")
+        self.script("demo", "# tpf:include m\nm\n", version="2.5")
+        head = self.header()
+        for expected in ("#   Project    : proj - Big Project", "#   Repository : https://example.org/p",
+                         "#   License    : MIT", "#   Tool       : demo 2.5   (src/demo/)", "#   Modules    : m",
+                         f"#   Packager   : tpf.py {__version__}"):
+            self.assertIn(expected, head)
+        self.assertRegex(head, r"#   Sources    : sha256:[0-9a-f]{16}\n")
+        self.assertRegex(head, r"#   Built      : \d{4}-\d\d-\d\d \d\d:\d\d:\d\d UTC\n")
+        self.assertIn(f"#   Python     : {platform.python_version()} (", head)
+        self.assertIn("do not edit", head)
+
+    def test_project_name_defaults_to_the_folder_and_optional_lines_are_left_out(self):
+        self.script("demo", "echo x\n")
+        head = self.header()
+        self.assertIn(f"#   Project    : {self.root.name}\n", head)
+        self.assertNotIn("Repository", head)
+        self.assertNotIn("License", head)
+        self.assertIn("#   Modules    : -\n", head)
+
+    def test_project_toml_is_validated(self):
+        for text in ('unknown = "x"\n', 'name = 3\n', "name = \n"):
+            with self.subTest(text=text):
+                self.put("project.toml", text)
+                self.script("demo", "echo x\n")
+                with self.assertRaises(TpfError):
+                    Project(self.root)
+
+    def test_source_date_epoch_fixes_the_build_date(self):
+        self.script("demo", "echo x\n")
+        with mock.patch.dict(os.environ, {"SOURCE_DATE_EPOCH": "86400"}):
+            self.assertIn("#   Built      : 1970-01-02 00:00:00 UTC\n", self.header())
+            first = self.build_text("demo")
+            self.assertEqual(first, self.build_text("demo"))  # fully reproducible with a fixed date
+
+    def test_strip_volatile_removes_only_the_lines_that_change(self):
+        self.script("demo", "echo x\n")
+        with mock.patch.dict(os.environ, {"SOURCE_DATE_EPOCH": "1"}):
+            one = self.build_text("demo")
+        with mock.patch.dict(os.environ, {"SOURCE_DATE_EPOCH": "999999999"}):
+            two = self.build_text("demo")
+        self.assertNotEqual(one, two)
+        self.assertEqual(strip_volatile(one), strip_volatile(two))
+        stripped = strip_volatile(one)
+        for gone in ("#   Built", "#   Python", "#   Git"):
+            self.assertNotIn(gone, stripped)
+        for kept in ("#   Tool", "#   Sources", "#   Packager", "#   Project"):
+            self.assertIn(kept, stripped)
+
+    def test_check_and_build_ignore_the_volatile_lines(self):
+        self.script("demo", "echo x\n")
+        run = CommandTests.run_cli
+        with mock.patch.dict(os.environ, {"SOURCE_DATE_EPOCH": "100"}):
+            self.assertEqual(run(self, "build")[0], 0)
+        target = self.root / "dist" / "demo.sh"
+        before = target.read_bytes()
+        with mock.patch.dict(os.environ, {"SOURCE_DATE_EPOCH": "200"}):
+            self.assertEqual(run(self, "check")[0], 0)  # a later date is not "stale"
+            code, out, _ = run(self, "build")
+            self.assertEqual(code, 0)
+            self.assertIn("same", out)
+            self.assertEqual(target.read_bytes(), before)  # and nothing was rewritten
+            self.put("src/demo/main.sh", SHEBANG + "echo changed\n")
+            self.assertIn("STALE", run(self, "check")[1])  # a real change still is
+            self.assertEqual(run(self, "build")[0], 0)
+            self.assertIn("1970-01-01 00:03:20 UTC", target.read_text())  # rewritten with the new date
+
+    def test_no_git_line_outside_a_repository(self):
+        self.script("demo", "echo x\n")
+        self.assertNotIn("#   Git", self.header())
+
+    @unittest.skipUnless(shutil.which("git"), "git not installed")
+    def test_git_line_with_commit_branch_and_state(self):
+        git = lambda *a: subprocess.run(["git", *a], cwd=self.root, check=True, capture_output=True)  # noqa: E731
+        self.script("demo", "echo x\n")
+        git("init", "-q", "-b", "trunk")
+        git("add", "-A")
+        git("-c", "user.name=t", "-c", "user.email=t@example.org", "commit", "-q", "-m", "first")
+        head = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=self.root, capture_output=True, text=True).stdout.strip()
+        self.assertIn(f"#   Git        : {head} on trunk (clean)\n", self.header())
+        self.put("src/demo/main.sh", SHEBANG + "echo edited\n")
+        self.assertIn(f"#   Git        : {head} on trunk (with uncommitted changes)\n", self.header())
 
 
 class CommandTests(ProjectCase):

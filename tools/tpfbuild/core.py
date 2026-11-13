@@ -11,14 +11,20 @@ sources may contain directives, which must start in column 0:
 Every module is inserted once, at its first inclusion. The result is a single
 standalone script: no file of the repository is needed to run it.
 
-The output is a pure function of the sources (no date, no machine data), so a
-rebuild is always byte-identical and ``check`` can detect a stale ``dist/``.
+The header of a generated script records where it comes from and how it was
+built. The lines that depend on the moment or the machine (Built, Python, Git)
+are "volatile": ``strip_volatile`` removes them, and ``build`` and ``check``
+compare scripts without them. Everything else is a pure function of the sources,
+so a rebuild gives the same script and ``check`` can detect a stale ``dist/``.
+``SOURCE_DATE_EPOCH`` fixes the build date (reproducible builds).
 """
 
 from __future__ import annotations
 
+import datetime
 import hashlib
 import os
+import platform
 import re
 import shlex
 import shutil
@@ -28,12 +34,22 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import __version__
+
 DIRECTIVE_PREFIX = "# tpf:"
 NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 KEY_RE = re.compile(r"^[a-z][a-z0-9-]*$")
 MODULE_RE = re.compile(r"^[a-z][a-z0-9_-]*$")
 SHELLCHECK_LEVELS = ("error", "warning", "info", "style", "off")
 META_KEYS = {"name", "version", "description", "main", "output", "shellcheck", "dist"}
+PROJECT_KEYS = {"name", "title", "repository", "license"}
+# Header lines that depend on the moment or the machine of the build.
+VOLATILE_RE = re.compile(r"(?m)^#   (?:Built|Python|Git)\s*:[^\n]*\n")
+
+
+def strip_volatile(text: str) -> str:
+    """The script without the header lines that change from build to build."""
+    return VOLATILE_RE.sub("", text)
 
 
 class TpfError(Exception):
@@ -104,6 +120,14 @@ class _Context:
             self.files.append(path)
 
 
+@dataclass(frozen=True)
+class ProjectInfo:
+    name: str
+    title: str = ""
+    repository: str = ""
+    license: str = ""
+
+
 class Project:
     """A repository checkout: ``root/src`` (sources) and ``root/dist`` (output)."""
 
@@ -112,6 +136,25 @@ class Project:
         self.src = self.root / "src"
         self.dist = self.root / "dist"
         self.lib = self.src / "lib"
+        self.info = self._load_info()
+
+    def _load_info(self) -> ProjectInfo:
+        """``project.toml`` at the root (optional): name, title, repository, license."""
+        path = self.root / "project.toml"
+        if not path.is_file():
+            return ProjectInfo(name=self.root.name)
+        try:
+            data = tomllib.loads(read_text(path))
+        except tomllib.TOMLDecodeError as exc:
+            raise TpfError(f"{path}: invalid TOML ({exc})") from exc
+        unknown = set(data) - PROJECT_KEYS
+        if unknown:
+            raise TpfError(f"{path}: unknown key(s): {', '.join(sorted(unknown))}")
+        for key, value in data.items():
+            if not isinstance(value, str) or "\n" in value:
+                raise TpfError(f"{path}: '{key}' must be a single-line string")
+        return ProjectInfo(name=data.get("name") or self.root.name, title=data.get("title", ""),
+                           repository=data.get("repository", ""), license=data.get("license", ""))
 
     # -- discovery ---------------------------------------------------------
     def script_keys(self) -> list[str]:
@@ -201,7 +244,7 @@ class Project:
         body = self._expand(script.main, ctx, is_main=True)
         shebang, body = body
         digest = self._digest(ctx.files)
-        text = self._render(script, shebang, body, digest)
+        text = self._render(script, shebang, body, digest, ctx.modules)
         return BuildResult(script, text, list(ctx.files), list(ctx.modules))
 
     def _digest(self, files: list[Path]) -> str:
@@ -210,14 +253,56 @@ class Project:
             h.update(self.rel(path).encode() + b"\0" + path.read_bytes() + b"\0")
         return h.hexdigest()
 
-    def _render(self, script: Script, shebang: str, body: str, digest: str) -> str:
+    def _git_line(self) -> str | None:
+        """Where the sources come from, or None when the project is not a git checkout."""
+        def git(*args: str) -> subprocess.CompletedProcess:
+            return subprocess.run(["git", *args], cwd=self.root, capture_output=True, text=True, timeout=15)
+        try:
+            top = git("rev-parse", "--show-toplevel")
+            if top.returncode != 0 or Path(top.stdout.strip()).resolve() != self.root:
+                return None
+            rev = git("rev-parse", "--short", "HEAD")
+            if rev.returncode != 0:
+                return None
+            branch = git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip() or "?"
+            dirty = git("status", "--porcelain", "--", "src", "tools", "project.toml").stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return f"{rev.stdout.strip()} on {branch} ({'with uncommitted changes' if dirty else 'clean'})"
+
+    @staticmethod
+    def _build_date() -> str:
+        epoch = os.environ.get("SOURCE_DATE_EPOCH", "")
+        moment = (datetime.datetime.fromtimestamp(int(epoch), datetime.timezone.utc) if epoch.isdigit()
+                  else datetime.datetime.now(datetime.timezone.utc))
+        return moment.strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    def _render(self, script: Script, shebang: str, body: str, digest: str, modules: list[str]) -> str:
         bar = "# " + "=" * 76
-        header = [
-            shebang,
-            bar,
-            f"# {script.description}",
-            f"# Generated by tpf from src/{script.key}/ - do not edit, run ./tpf.py build.",
-            f"# {script.name} {script.version} (sources sha256:{digest[:16]})",
+        info = self.info
+        rows = [("Project", f"{info.name} - {info.title}" if info.title else info.name)]
+        if info.repository:
+            rows.append(("Repository", info.repository))
+        if info.license:
+            rows.append(("License", info.license))
+        rows += [
+            ("Tool", f"{script.name} {script.version}   (src/{script.key}/)"),
+            ("Modules", ", ".join(modules) or "-"),
+            ("Sources", f"sha256:{digest[:16]}"),
+            ("Packager", f"tpf.py {__version__}"),
+            # -- volatile: ignored when comparing (see strip_volatile) --
+            ("Built", self._build_date()),
+            ("Python", f"{platform.python_version()} ({platform.python_implementation()}) "
+                       f"on {platform.system()} {platform.machine()}"),
+        ]
+        git_line = self._git_line()
+        if git_line:
+            rows.append(("Git", git_line))
+        header = [shebang, bar, f"# {script.description}", "#"]
+        header += [f"#   {label:<10} : {value}" for label, value in rows]
+        header += [
+            "#",
+            "# Generated file: do not edit. Change src/ and run ./tpf.py build.",
             bar,
             "# shellcheck disable=SC2034  # available to the script, not always used",
             f"TPF_NAME={shlex.quote(script.name)}",
