@@ -4,8 +4,17 @@
 
 A tool is a folder `src/<name>/` with a `tpf.toml` and a `main.sh`. `./tpf.py build`
 glues `main.sh`, the shared modules and the other files it names into one script
-in `dist/`, checks it, and writes it. `./tpf.py check` rebuilds in memory and
-compares with `dist/`, so a forgotten rebuild is caught.
+in `dist/`, checks it, and writes it. `dist/` is generated and ignored by git: the
+CI builds the scripts and the releases publish them.
+
+```sh
+./tpf.py build [NAME...]          # scripts -> dist/ (a script that fails its checks writes nothing)
+./tpf.py build --out DIR          # ... into DIR instead of dist/
+./tpf.py check [NAME...]          # build in memory and validate; writes nothing
+./tpf.py check --smoke            # ... and run each result (--version, --help)
+./tpf.py check --strict           # ... failing when shellcheck is not installed
+./tpf.py check --dist             # ... and require a local dist/ to be up to date
+```
 
 `tpf.toml`:
 
@@ -50,15 +59,16 @@ that depend on the moment or the machine. Every script starts with:
 ```
 
 `Git` is the commit (and branch) the build started from. The three volatile lines are ignored when
-`build` and `check` compare a script with its `dist/` file: a later date is never
-"stale", and `build` does not rewrite a file that only differs by them. Set
+`build` and `check --dist` compare a script with its `dist/` file without them: a
+later date is never "stale", and `build` does not rewrite a file that only differs
+by them. Set
 `SOURCE_DATE_EPOCH` to fix the build date (reproducible output).
 
 `project.toml` at the root is optional: `name`, `title`, `repository`, `license`
 (single-line strings; the name defaults to the folder). `TPF_NAME`, `TPF_VERSION`
 and `TPF_SOURCE_HASH` are available to the script itself. `build` validates every
 script (`bash -n`, then `shellcheck` at the level of the toml) before writing
-anything, so a broken source never replaces a good `dist/` file.
+anything, so a broken source never replaces a good file in `dist/`.
 
 ## The modules (`src/lib/`)
 
@@ -121,8 +131,52 @@ What is **not** run by the tests: the `install`, `reinstall` and `uninstall` flo
 
 ## Habits
 
-- Edit `src/`, run `./tpf.py build`, commit the source and the rebuilt `dist/` together.
-- Do not edit `dist/` by hand: `./tpf.py check` will flag it.
+- Edit `src/`, run `./tpf.py check --smoke` and the tests, commit the sources. `dist/` is
+  never committed.
+- Do not edit `dist/` by hand: the next build replaces it.
 - Keep one commit to one idea; run the tests before committing.
 - Run long steps through `task` (foreground, logged), and say what they need
   (network, storage) before starting them.
+
+## CI and releases
+
+Two workflows live in `.github/workflows/`.
+
+**`ci.yml`** runs on every push and every pull request, with three jobs:
+
+| Job | What it does |
+|---|---|
+| `check` | `tpf.py check --strict --smoke`: `bash -n` and `shellcheck` on every script, then runs `--version` and `--help` of each |
+| `build` | `tpf.py build`: the real compilation into `dist/`; the scripts are kept as a workflow artifact for 7 days |
+| `tests` | the whole test suite |
+
+**`release.yml`** starts when a release is **published** on GitHub (a tag such as
+`v1.2.0`): it repeats the check and the tests, compiles every script (the header date
+is the date of the commit, so the same tag always gives the same files) and attaches
+the scripts and a `SHA256SUMS` file **to that release**. To attach them again (after a
+failed run, for example), start it by hand from the Actions tab with the tag.
+
+### Required checks
+
+The workflows can only report; making the checks **mandatory for a pull request** is a
+setting of the repository (a workflow file cannot change it). Run this once, with an
+account that administers the repository, after the first CI run (the check names only
+exist after a first run):
+
+```sh
+gh api -X PUT repos/Oignontom8283/tpf/branches/main/protection --input - <<'JSON'
+{
+  "required_status_checks": { "strict": true, "contexts": ["check", "build", "tests"] },
+  "enforce_admins": false,
+  "required_pull_request_reviews": null,
+  "restrictions": null
+}
+JSON
+```
+
+`strict` also requires the branch to be up to date with `main` before it is merged.
+Add `"required_pull_request_reviews": {"required_approving_review_count": 1}` to require
+a review too. The same can be done in *Settings -> Branches -> Add rule*.
+
+The CI cannot be run on a phone: `tests/test_ci.py` checks the shape of the workflows,
+and the commands of their steps were run locally.
