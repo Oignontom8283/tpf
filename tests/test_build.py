@@ -235,8 +235,9 @@ class EmbedTests(ProjectCase):
         self.put("src/lib/hello.sh", "hello() { echo hello; }\n")
         self.script("inner", "# tpf:include hello\nhello\n")
         self.script("outer", "# tpf:embed-dist inner as inner_script\ninner_script\n")
-        outer = self.build_text("outer")
-        inner = self.build_text("inner")
+        with mock.patch.dict(os.environ, {"SOURCE_DATE_EPOCH": "1000"}):  # the header holds the build time
+            outer = self.build_text("outer")
+            inner = self.build_text("inner")
         code, out, err = self.run_script(outer)
         self.assertEqual((code, err), (0, ""))
         self.assertEqual(out, inner)
@@ -345,13 +346,13 @@ class HeaderTests(ProjectCase):
         target = self.root / "dist" / "demo.sh"
         before = target.read_bytes()
         with mock.patch.dict(os.environ, {"SOURCE_DATE_EPOCH": "200"}):
-            self.assertEqual(run(self, "check")[0], 0)  # a later date is not "stale"
+            self.assertEqual(run(self, "check", "--dist")[0], 0)  # a later date is not "stale"
             code, out, _ = run(self, "build")
             self.assertEqual(code, 0)
             self.assertIn("same", out)
             self.assertEqual(target.read_bytes(), before)  # and nothing was rewritten
             self.put("src/demo/main.sh", SHEBANG + "echo changed\n")
-            self.assertIn("STALE", run(self, "check")[1])  # a real change still is
+            self.assertIn("STALE", run(self, "check", "--dist")[1])  # a real change still is
             self.assertEqual(run(self, "build")[0], 0)
             self.assertIn("1970-01-01 00:03:20 UTC", target.read_text())  # rewritten with the new date
 
@@ -380,24 +381,81 @@ class CommandTests(ProjectCase):
             code = cli.main(["--root", str(self.root), *argv])
         return code, "".join(out), "".join(err)
 
-    def test_build_then_check_then_stale_missing_orphan(self):
+    def test_build_then_check_dist_then_stale_missing_orphan(self):
         self.script("demo", "echo ok\n")
         self.assertEqual(self.run_cli("build")[0], 0)
         target = self.root / "dist" / "demo.sh"
         self.assertTrue(os.access(target, os.X_OK))
-        self.assertEqual(self.run_cli("check")[0], 0)
+        self.assertEqual(self.run_cli("check", "--dist")[0], 0)
         self.put("src/demo/main.sh", SHEBANG + "echo changed\n")
-        code, out, _ = self.run_cli("check")
+        code, out, _ = self.run_cli("check", "--dist")
         self.assertEqual(code, 1)
         self.assertIn("STALE", out)
         self.assertEqual(self.run_cli("build")[0], 0)
         target.unlink()
-        self.assertIn("MISSING", self.run_cli("check")[1])
+        self.assertIn("MISSING", self.run_cli("check", "--dist")[1])
         self.run_cli("build")
         self.put("dist/orphan.sh", "#!/bin/sh\n")
-        code, _, err = self.run_cli("check")
+        code, _, err = self.run_cli("check", "--dist")
         self.assertEqual(code, 1)
         self.assertIn("ORPHAN", err)
+
+    def test_check_alone_needs_no_dist_and_writes_nothing(self):
+        # dist/ is not committed: a fresh checkout has none, and check must still work.
+        self.script("demo", "echo ok\n")
+        code, out, _ = self.run_cli("check")
+        self.assertEqual(code, 0)
+        self.assertIn("ok       demo", out)
+        self.assertFalse((self.root / "dist").exists())
+        self.put("dist/orphan.sh", "#!/bin/sh\n")      # leftovers are only reported with --dist
+        self.assertEqual(self.run_cli("check")[0], 0)
+
+    def test_check_still_rejects_an_invalid_script_without_dist(self):
+        self.script("demo", "if then fi (\n")
+        code, _, err = self.run_cli("check")
+        self.assertEqual(code, 1)
+        self.assertIn("bash -n failed", err)
+
+    def test_build_out_writes_to_another_directory_and_leaves_dist_alone(self):
+        self.script("demo", "echo ok\n")
+        out = self.root / "release"
+        code, text, _ = self.run_cli("build", "--out", str(out))
+        self.assertEqual(code, 0)
+        self.assertIn(str(out), text)
+        self.assertTrue(os.access(out / "demo.sh", os.X_OK))
+        self.assertFalse((self.root / "dist").exists())
+        code, text, _ = self.run_cli("build", "-o", str(out))
+        self.assertIn("same", text)       # an unchanged script is not rewritten there either
+
+    def test_build_out_does_not_write_when_a_script_is_invalid(self):
+        self.script("good", "echo ok\n")
+        self.script("bad", "if then fi (\n")
+        out = self.root / "release"
+        code, _, err = self.run_cli("build", "--out", str(out))
+        self.assertEqual(code, 1)
+        self.assertIn("Nothing was written", err)
+        self.assertFalse(out.exists())
+
+    def test_smoke_runs_the_built_script(self):
+        self.put("src/lib/cmdlike.sh", 'case "${1:-}" in --version) echo "$TPF_NAME $TPF_VERSION" ;; --help) echo usage ;; esac\n')
+        self.script("demo", "# tpf:include cmdlike\n", version="3.2")
+        code, out, err = self.run_cli("check", "--smoke")
+        self.assertEqual(code, 0, out + err)
+
+    def test_smoke_catches_a_script_that_crashes_when_it_starts(self):
+        # Valid syntax, so bash -n and shellcheck are happy: only running it shows the problem.
+        self.script("demo", "undefined_function_call\n", extra='shellcheck = "off"\n')
+        self.assertEqual(self.run_cli("check")[0], 0)
+        code, out, err = self.run_cli("check", "--smoke")
+        self.assertEqual(code, 1)
+        self.assertIn("CRASHES", out)
+        self.assertIn("--version", err)
+
+    def test_smoke_catches_a_wrong_version_answer(self):
+        self.script("demo", 'echo "something else"\n')
+        code, out, err = self.run_cli("check", "--smoke")
+        self.assertEqual(code, 1)
+        self.assertIn("unexpected output", err)
 
     def test_broken_script_never_replaces_a_good_dist_file(self):
         self.script("good", "echo good\n")

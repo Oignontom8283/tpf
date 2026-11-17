@@ -6,8 +6,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from .core import (KEY_RE, BuildResult, Project, Script, TpfError, strip_volatile,
-                   validate, write_atomic)
+from .core import (KEY_RE, BuildResult, Project, Script, TpfError, smoke,
+                   strip_volatile, validate, write_atomic)
 
 MAIN_TEMPLATE = """#!/data/data/com.termux/files/usr/bin/bash
 # {name} - {description}
@@ -66,6 +66,8 @@ def _report(label: str, validation) -> None:
 def cmd_build(project: Project, args: argparse.Namespace) -> int:
     scripts = _select(project, args.names)
     built = _build_all(project, scripts)
+    out_dir = Path(args.out).resolve() if args.out else project.dist
+    shown = out_dir.name + "/" if not args.out else f"{out_dir}/"
     # Validate everything first: a broken script never replaces a good one.
     failed = False
     for script, result in built:
@@ -75,21 +77,27 @@ def cmd_build(project: Project, args: argparse.Namespace) -> int:
             _report("error", validation)
             failed = True
     if failed:
-        print("Nothing was written to dist/.", file=sys.stderr)
+        print(f"Nothing was written to {shown}", file=sys.stderr)
         return 1
     for script, result in built:
         if not script.publish:
             print(f"skip  {script.key} (dist = false)")
             continue
-        target = project.dist / script.output
+        target = out_dir / script.output
         unchanged = target.is_file() and strip_volatile(target.read_text(encoding="utf-8")) == strip_volatile(result.text)
         if not unchanged:
             write_atomic(target, result.text)
-        print(f"{'same' if unchanged else 'built'}  dist/{script.output}  ({script.name} {script.version})")
+        print(f"{'same' if unchanged else 'built'}  {shown}{script.output}  ({script.name} {script.version})")
     return 0
 
 
 def cmd_check(project: Project, args: argparse.Namespace) -> int:
+    """Build every script in memory and validate it; nothing is written.
+
+    --smoke    also run each built script (--version, --help)
+    --dist     also require dist/ to hold an up-to-date copy of each script
+    --strict   fail if a checker (shellcheck) is not installed
+    """
     scripts = _select(project, args.names)
     problems = 0
     expected: set[str] = set()
@@ -99,14 +107,21 @@ def cmd_check(project: Project, args: argparse.Namespace) -> int:
         if not validation.ok:
             status = "INVALID"
             problems += 1
-        elif script.publish:
-            target = project.dist / script.output
-            if not target.is_file():
-                status = "MISSING dist file"
+        else:
+            crashed = smoke(result) if args.smoke else []
+            if crashed:
+                status = "CRASHES"
                 problems += 1
-            elif strip_volatile(target.read_text(encoding="utf-8")) != strip_volatile(result.text):
-                status = "STALE dist file (run ./tpf.py build)"
-                problems += 1
+                for line in crashed:
+                    print(f"  error: {line}", file=sys.stderr)
+            elif args.dist and script.publish:
+                target = project.dist / script.output
+                if not target.is_file():
+                    status = "MISSING dist file"
+                    problems += 1
+                elif strip_volatile(target.read_text(encoding="utf-8")) != strip_volatile(result.text):
+                    status = "STALE dist file (run ./tpf.py build)"
+                    problems += 1
         if script.publish:
             expected.add(script.output)
         print(f"{status:<8} {script.key}")
@@ -114,7 +129,7 @@ def cmd_check(project: Project, args: argparse.Namespace) -> int:
         if args.strict and any("skipped" in n for n in validation.notes):
             print(f"  error: {script.key}: --strict needs every checker installed", file=sys.stderr)
             problems += 1
-    if not args.names and project.dist.is_dir():
+    if args.dist and not args.names and project.dist.is_dir():
         for entry in sorted(project.dist.iterdir()):
             if entry.name.startswith(".") or entry.name in expected:
                 continue
@@ -130,7 +145,7 @@ def cmd_check(project: Project, args: argparse.Namespace) -> int:
 def cmd_list(project: Project, args: argparse.Namespace) -> int:
     for script in project.load_all():
         result = project.build(script.key)
-        out = f"dist/{script.output}" if script.publish else "(not published)"
+        out = f"-> {script.output}" if script.publish else "(not published)"
         mods = ", ".join(result.modules) or "-"
         print(f"{script.key:<18} {script.version:<8} {out}")
         print(f"{'':<18} modules: {mods}")
@@ -170,12 +185,15 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2],
                         help="repository root (default: the checkout containing this tool)")
     sub = parser.add_subparsers(dest="command", required=True)
-    p = sub.add_parser("build", help="rebuild dist/ from src/")
+    p = sub.add_parser("build", help="build the scripts into dist/ (or into --out DIR)")
     p.add_argument("names", nargs="*")
+    p.add_argument("-o", "--out", metavar="DIR", help="write the scripts to DIR instead of dist/")
     p.set_defaults(func=cmd_build)
-    p = sub.add_parser("check", help="verify dist/ is current and every script is valid")
+    p = sub.add_parser("check", help="build in memory and validate every script (writes nothing)")
     p.add_argument("names", nargs="*")
     p.add_argument("--strict", action="store_true", help="fail if a checker (shellcheck) is missing")
+    p.add_argument("--smoke", action="store_true", help="also run each built script (--version, --help)")
+    p.add_argument("--dist", action="store_true", help="also require dist/ to be an up-to-date copy")
     p.set_defaults(func=cmd_check)
     p = sub.add_parser("list", help="list the scripts and the modules they use")
     p.set_defaults(func=cmd_list)

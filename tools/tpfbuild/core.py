@@ -468,6 +468,36 @@ def validate(result: BuildResult) -> Validation:
     return out
 
 
+def smoke(result: BuildResult) -> list[str]:
+    """Run the built script's --version and --help in a throw-away HOME.
+
+    Catches what syntax checks cannot: a script that fails as soon as it starts
+    (an undefined function, a missing embedded file). Returns the problems found.
+    """
+    bash = shutil.which("bash")
+    if not bash:
+        return ["bash not found: cannot run the script"]
+    problems: list[str] = []
+    with tempfile.TemporaryDirectory(prefix="tpf-smoke-") as tmp:
+        probe = Path(tmp) / f"{result.script.name}.sh"
+        probe.write_text(result.text, encoding="utf-8")
+        env = {"PATH": os.environ.get("PATH", ""), "HOME": tmp, "TERM": "dumb",
+               "PREFIX": os.environ.get("PREFIX", "/data/data/com.termux/files/usr")}
+        for option, check in (("--version", lambda o: o == f"{result.script.name} {result.script.version}\n"),
+                              ("--help", lambda o: bool(o.strip()))):
+            try:
+                done = subprocess.run([bash, str(probe), option], capture_output=True, text=True, env=env,
+                                      stdin=subprocess.DEVNULL, timeout=30)
+            except subprocess.TimeoutExpired:
+                problems.append(f"{option}: no answer after 30 s")
+                continue
+            if done.returncode != 0:
+                problems.append(f"{option}: exit status {done.returncode}: {(done.stderr or done.stdout).strip()[:200]}")
+            elif not check(done.stdout):
+                problems.append(f"{option}: unexpected output: {done.stdout.strip()[:200]!r}")
+    return problems
+
+
 # --------------------------------------------------------------------------
 # Writing
 # --------------------------------------------------------------------------
