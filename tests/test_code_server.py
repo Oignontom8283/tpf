@@ -83,7 +83,10 @@ class CodeServerCase(unittest.TestCase):
 
     def run_cs(self, *args, timeout=60):
         env = {**{k: v for k, v in os.environ.items() if not k.startswith("TPF_")}, "HOME": str(self.home), "CS_CONF": str(self.conf), "TERM": "dumb",
-               "TPF_CS_PROC_PATTERN": self.pattern, "PATH": f"{self.home / 'bin'}:{os.environ['PATH']}"}
+               "TPF_CS_PROC_PATTERN": self.pattern,
+               # The script is written for Termux and reads $PREFIX: tests must not depend on
+               # the machine they run on (the CI runs on Ubuntu, where it is not set).
+               "PREFIX": str(self.home / "usr"), "PATH": f"{self.home / 'bin'}:{os.environ['PATH']}"}
         env.pop("VSCODE_IPC_HOOK_CLI", None)
         env.pop("TERM_PROGRAM", None)
         done = subprocess.run(["bash", str(self.script), *args], capture_output=True, text=True, env=env,
