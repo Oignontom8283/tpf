@@ -1,0 +1,68 @@
+# Publishes the scripts of a release.
+#
+# Create a release on GitHub (a tag such as v1.2.0, "Publish release"): this
+# workflow starts, compiles every script and attaches them to THAT release,
+# together with a SHA256SUMS file.
+#
+# Run it by hand ("Run workflow", with the tag) to attach the scripts again, for
+# example after fixing a failed run. Existing files of the release are replaced.
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag of the release to attach the scripts to (for example v1.2.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Refuse an empty tag
+        run: test -n "$TAG"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+          fetch-depth: 0
+      - name: The release must exist
+        run: gh release view "$TAG" --json tagName,isDraft,url --jq '.url'
+      - name: Check every script (same as the CI)
+        run: python3 tpf.py check --strict --smoke
+      - name: Run the tests
+        run: python3 -m unittest discover -s tests
+      - name: Compile every script
+        run: |
+          # The date written in the headers is the date of the commit: building the
+          # same tag twice gives the same files.
+          export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          python3 tpf.py build
+          cd dist
+          sha256sum -- *.sh > SHA256SUMS
+          ls -l
+          cat SHA256SUMS
+      - name: Attach the scripts to the release
+        run: gh release upload "$TAG" dist/*.sh dist/SHA256SUMS --clobber
+      - name: Summary
+        run: |
+          {
+            echo "### Scripts attached to \`$TAG\`"
+            echo
+            echo '```'
+            cat dist/SHA256SUMS
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

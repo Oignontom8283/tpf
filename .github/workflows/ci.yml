@@ -1,0 +1,70 @@
+# Runs on every push and every pull request.
+#
+# Three jobs, each one a status check that can be made REQUIRED for a pull request
+# (see "Required checks" in docs/DEVELOPING.md):
+#   check  - syntax of every script (bash -n, shellcheck) and a first run of each
+#   build  - the real compilation: builds every script like a release does
+#   tests  - the test suite of the packager, the modules and the tools
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tool versions
+        run: |
+          python3 --version
+          bash --version | head -n 1
+          shellcheck --version | sed -n '2p'
+      - name: Syntax, shellcheck and first run of every script
+        # Builds every script in memory (nothing is written): bash -n, shellcheck at
+        # the level of each tpf.toml, then --version and --help of the result.
+        # --strict makes a missing shellcheck an error instead of a skipped check.
+        run: python3 tpf.py check --strict --smoke
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile every script
+        run: python3 tpf.py build
+      - name: Look at the result
+        run: |
+          ls -l dist
+          test "$(ls dist/*.sh | wc -l)" -eq "$(python3 tpf.py list | grep -c ' -> ')"
+          head -n 16 dist/termux-keepalive.sh
+          for script in dist/*.sh; do
+            bash -n "$script"
+            test -x "$script"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scripts-${{ github.sha }}
+          path: dist/*.sh
+          if-no-files-found: error
+          retention-days: 7
+
+  tests:
+    name: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the test suite
+        run: python3 -m unittest discover -s tests -v
