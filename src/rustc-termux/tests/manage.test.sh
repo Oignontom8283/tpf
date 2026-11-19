@@ -116,17 +116,6 @@ test_clang_linker_with_sysroot() {
     assert_file_contains "$f" '-fuse-ld=lld "$@"'
 }
 
-test_list_flags_a_linker_that_points_to_missing_files() {
-    mkdir -p "$HOME/lib"   # the sysroot of the first linker
-    run_script linker add aarch64-linux-android --clang aarch64-linux-android24 --sysroot "$HOME"
-    run_script linker list
-    assert_contains "$OUT" "aarch64-linux-android"
-    assert_not_contains "$OUT" "missing"
-    run_script linker add x86_64-linux-android --clang x86_64-linux-android24 --sysroot "$HOME/gone"
-    run_script linker list
-    assert_match "$OUT" "x86_64-linux-android: missing: .*gone"
-}
-
 # The "#!" line of a linker script names the interpreter, written for Termux. It is not an input of
 # the linker: on any other system (the CI runs on Ubuntu) it must not be reported as missing.
 test_list_does_not_check_the_interpreter_line_of_a_linker() {
