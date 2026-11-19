@@ -441,30 +441,39 @@ def validate(result: BuildResult) -> Validation:
         out.errors.append("line 1: no #! line")
     if out.errors:
         return out
+    with tempfile.TemporaryDirectory(prefix="tpf-check-") as tmp:
+        probe = Path(tmp) / f"{result.script.name}.sh"
+        probe.write_text(text, encoding="utf-8")
+        return lint_file(probe, result.script.shellcheck, label="script")
+
+
+def lint_file(path: Path, level: str = "error", label: str | None = None) -> Validation:
+    """``bash -n`` then ``shellcheck`` on any shell file. ``level`` is a shellcheck severity or "off"."""
+    out = Validation()
+    shown = label or str(path)
+    if not path.is_file():
+        out.errors.append(f"{path}: no such file")
+        return out
     bash = shutil.which("bash")
     if not bash:
         out.errors.append("bash not found: cannot check the syntax")
         return out
-    with tempfile.TemporaryDirectory(prefix="tpf-check-") as tmp:
-        probe = Path(tmp) / f"{result.script.name}.sh"
-        probe.write_text(text, encoding="utf-8")
-        syntax = subprocess.run([bash, "-n", str(probe)], capture_output=True, text=True)
-        if syntax.returncode != 0:
-            out.errors.append("bash -n failed: " + syntax.stderr.strip().replace(str(probe), "script"))
-            return out
-        level = result.script.shellcheck
-        if level == "off":
-            out.notes.append("shellcheck disabled for this script")
-            return out
-        checker = shutil.which("shellcheck")
-        if not checker:
-            out.notes.append("shellcheck not installed: skipped")
-            return out
-        lint = subprocess.run([checker, "-s", "bash", "-S", level, "-f", "gcc", str(probe)],
-                              capture_output=True, text=True)
-        if lint.returncode != 0:
-            detail = lint.stdout.strip().replace(str(probe), "script")
-            out.errors.append(f"shellcheck ({level}) reported problems:\n{detail}")
+    syntax = subprocess.run([bash, "-n", str(path)], capture_output=True, text=True)
+    if syntax.returncode != 0:
+        out.errors.append("bash -n failed: " + syntax.stderr.strip().replace(str(path), shown))
+        return out
+    if level == "off":
+        out.notes.append("shellcheck disabled for this script")
+        return out
+    checker = shutil.which("shellcheck")
+    if not checker:
+        out.notes.append("shellcheck not installed: skipped")
+        return out
+    lint = subprocess.run([checker, "-s", "bash", "-S", level, "-f", "gcc", str(path)],
+                          capture_output=True, text=True)
+    if lint.returncode != 0:
+        detail = lint.stdout.strip().replace(str(path), shown)
+        out.errors.append(f"shellcheck ({level}) reported problems:\n{detail}")
     return out
 
 

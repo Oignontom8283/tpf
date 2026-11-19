@@ -142,6 +142,12 @@ def cmd_check(project: Project, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_test(project: Project, args: argparse.Namespace) -> int:
+    from . import testing
+    return testing.run(project, args.targets, lint=not args.no_lint, level=args.shellcheck, do_smoke=args.smoke,
+                       pattern=args.pattern, timeout=args.timeout, verbose=args.verbose)
+
+
 def cmd_list(project: Project, args: argparse.Namespace) -> int:
     for script in project.load_all():
         result = project.build(script.key)
@@ -195,6 +201,17 @@ def make_parser() -> argparse.ArgumentParser:
     p.add_argument("--smoke", action="store_true", help="also run each built script (--version, --help)")
     p.add_argument("--dist", action="store_true", help="also require dist/ to be an up-to-date copy")
     p.set_defaults(func=cmd_check)
+    p = sub.add_parser("test", help="check any shell script and run the shell tests written next to it")
+    p.add_argument("targets", nargs="*", metavar="TARGET",
+                   help="a tool of src/, a script (file.sh) or a test file (file.test.sh); default: every tool")
+    p.add_argument("--no-lint", action="store_true", help="do not run bash -n and shellcheck")
+    p.add_argument("--shellcheck", metavar="LEVEL", choices=("error", "warning", "info", "style", "off"),
+                   help="shellcheck severity for a script that is not a tool (default: error)")
+    p.add_argument("--smoke", action="store_true", help="also run the script with --version and --help")
+    p.add_argument("-k", dest="pattern", default="", metavar="TEXT", help="run only the tests whose name contains TEXT")
+    p.add_argument("--timeout", type=int, default=300, metavar="S", help="seconds allowed per test file (default 300)")
+    p.add_argument("-v", "--verbose", action="store_true", help="show every test, not only the failures")
+    p.set_defaults(func=cmd_test)
     p = sub.add_parser("list", help="list the scripts and the modules they use")
     p.set_defaults(func=cmd_list)
     p = sub.add_parser("new", help="create a new installer from a template")
