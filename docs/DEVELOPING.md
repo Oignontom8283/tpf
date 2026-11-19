@@ -109,7 +109,7 @@ a test checks the shared contract of every tool built on `cmd`.
 
 ## Tests
 
-Two kinds, both run by the CI:
+Two kinds, run on your machine (the CI only checks and builds):
 
 ```sh
 python3 -m unittest discover -s tests     # the packager, the modules, the contract of the tools
@@ -200,16 +200,15 @@ machine are fragile: give the script a stub instead (see
 
 Two workflows live in `.github/workflows/`.
 
-**`ci.yml`** runs on every push and every pull request, with three jobs:
+**`ci.yml`** runs on every push and every pull request, with two jobs:
 
 | Job | What it does |
 |---|---|
 | `check` | `tpf.py check --strict --smoke`: `bash -n` and `shellcheck` on every script, then runs `--version` and `--help` of each |
 | `build` | `tpf.py build`: the real compilation into `dist/`; the scripts are kept as a workflow artifact for 7 days |
-| `tests` | the whole test suite |
 
 **`release.yml`** starts when a release is **published** on GitHub (a tag such as
-`v1.2.0`): it repeats the check and the tests, compiles every script (the header date
+`v1.2.0`): it repeats the check, compiles every script (the header date
 is the date of the commit, so the same tag always gives the same files) and attaches
 the scripts and a `SHA256SUMS` file **to that release**. To attach them again (after a
 failed run, for example), start it by hand from the Actions tab with the tag.
@@ -224,7 +223,7 @@ exist after a first run):
 ```sh
 gh api -X PUT repos/Oignontom8283/tpf/branches/main/protection --input - <<'JSON'
 {
-  "required_status_checks": { "strict": true, "contexts": ["check", "build", "tests"] },
+  "required_status_checks": { "strict": true, "contexts": ["check", "build"] },
   "enforce_admins": false,
   "required_pull_request_reviews": null,
   "restrictions": null
@@ -235,6 +234,11 @@ JSON
 `strict` also requires the branch to be up to date with `main` before it is merged.
 Add `"required_pull_request_reviews": {"required_approving_review_count": 1}` to require
 a review too. The same can be done in *Settings -> Branches -> Add rule*.
+
+A pull request is therefore accepted only if `check` (the syntax and a first run of every
+script) and `build` (a real compilation) pass. The tests are **not** part of the CI: run them
+on your machine before pushing (`python3 -m unittest discover -s tests` and
+`python3 tpf.py test`).
 
 The CI cannot be run on a phone: `tests/test_ci.py` checks the shape of the workflows,
 and the commands of their steps were run locally.

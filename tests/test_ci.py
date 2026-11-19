@@ -32,7 +32,7 @@ class CiWorkflow(unittest.TestCase):
     def test_the_jobs_that_can_be_required_have_stable_names(self):
         # These names are the status checks that branch protection requires for a pull request.
         names = re.findall(r"(?m)^    name: (\S+)$", load("ci.yml"))
-        self.assertEqual(names, ["check", "build", "tests"])
+        self.assertEqual(names, ["check", "build"])
 
     def test_check_job_is_strict_and_runs_the_scripts(self):
         self.assertIn("python3 tpf.py check --strict --smoke", load("ci.yml"))
@@ -43,10 +43,12 @@ class CiWorkflow(unittest.TestCase):
         self.assertIn("path: dist/*.sh", text)
         self.assertNotIn("build/", text.replace("tpf.py build", ""))
 
-    def test_tests_job_runs_the_whole_suite(self):
-        text = load("ci.yml")
-        self.assertIn("python3 -m unittest discover -s tests", text)
-        self.assertIn("python3 tpf.py test --smoke", text)  # the shell tests of every tool
+    def test_there_is_no_test_job(self):
+        # The tests run on a developer's machine (python3 -m unittest discover -s tests, tpf.py test);
+        # the CI only checks and builds.
+        for name in ("ci.yml", "release.yml"):
+            self.assertNotIn("unittest", load(name))
+            self.assertNotIn("tpf.py test", load(name))
 
     def test_least_privilege(self):
         self.assertRegex(load("ci.yml"), r"(?m)^permissions:\n  contents: read\n")
@@ -54,7 +56,7 @@ class CiWorkflow(unittest.TestCase):
     @unittest.skipUnless(yaml, "PyYAML not installed")
     def test_it_is_valid_yaml_with_the_expected_jobs(self):
         data = parsed("ci.yml")
-        self.assertEqual(list(data["jobs"]), ["check", "build", "tests"])
+        self.assertEqual(list(data["jobs"]), ["check", "build"])
         for job in data["jobs"].values():
             self.assertEqual(job["runs-on"], "ubuntu-latest")
             self.assertTrue(job["steps"])
@@ -70,10 +72,9 @@ class ReleaseWorkflow(unittest.TestCase):
         self.assertIn("github.event.release.tag_name", text)
         self.assertIn('gh release upload "$TAG" dist/*.sh dist/SHA256SUMS --clobber', text)
 
-    def test_checks_and_tests_before_compiling(self):
+    def test_checks_before_compiling(self):
         text = load("release.yml")
-        order = [text.index(s) for s in ("tpf.py check --strict --smoke", "unittest discover", "tpf.py test --smoke",
-                                         "tpf.py build")]
+        order = [text.index(s) for s in ("tpf.py check --strict --smoke", "tpf.py build")]
         self.assertEqual(order, sorted(order))
 
     def test_dates_come_from_the_commit_so_a_rebuild_gives_the_same_files(self):
