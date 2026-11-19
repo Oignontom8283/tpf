@@ -16,16 +16,27 @@ from tpfbuild.core import Project  # noqa: E402
 PREFIX = os.environ.get("PREFIX", "")
 
 
-def real_tool(name):
-    """The genuine compiler or cargo: the fake ones of ~/.rustup-fake would call themselves forever."""
-    path = os.pathsep.join(d for d in os.environ.get("PATH", "").split(os.pathsep) if ".rustup-fake" not in d)
-    return shutil.which(name, path=path)
+# The tests never use the compiler of the machine they run on (it may be a rustup proxy that
+# needs a real HOME, or the fake rustc of ~/.rustup-fake): they give the script a stub that
+# answers what the management commands ask, the same way everywhere.
+STUB_RUSTC = """#!{bash}
+case "$*" in
+    "--version") echo "rustc 1.99.0 (stub)" ;;
+    "-vV") printf 'rustc 1.99.0 (stub)\\nbinary: rustc\\nhost: aarch64-linux-android\\nrelease: 1.99.0\\n' ;;
+    "--print sysroot") echo "{sysroot}" ;;
+    "--print target-list") printf '%s\\n' aarch64-linux-android armv7-linux-androideabi i686-linux-android \\
+        x86_64-linux-android wasm32-unknown-unknown thumbv7em-none-eabihf x86_64-unknown-linux-gnu ;;
+    *) echo "stub rustc: unexpected arguments: $*" >&2; exit 1 ;;
+esac
+"""
+STUB_CARGO = """#!{bash}
+case "$*" in
+    "--version") echo "cargo 1.99.0 (stub)" ;;
+    *) echo "stub cargo: unexpected arguments: $*" >&2; exit 1 ;;
+esac
+"""
 
 
-HAS_RUSTC = real_tool("rustc") is not None
-
-
-@unittest.skipUnless(HAS_RUSTC, "rustc not installed")
 class ManageCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -43,14 +54,22 @@ class ManageCase(unittest.TestCase):
         self.conf.write_text("# saved choices\nRT_JOBS=2\nRT_NIGHTLY=0\nRT_PACKS=zig\\ msvc\nRT_OTHER='keep me'\n")
         self.script = self.home / "rustc-termux.sh"
         self.script.write_text(self.script_text)
+        stubs = self.home / "stubs"
+        stubs.mkdir()
+        sysroot = self.home / "sysroot"
+        sysroot.mkdir()
+        bash = shutil.which("bash")
+        self.rustc = stubs / "rustc"
+        self.rustc.write_text(STUB_RUSTC.format(bash=bash, sysroot=sysroot))
+        self.cargo = stubs / "cargo"
+        self.cargo.write_text(STUB_CARGO.format(bash=bash))
+        for stub in (self.rustc, self.cargo):
+            stub.chmod(0o755)
 
     def run_rt(self, *args):
         env = {**{k: v for k, v in os.environ.items() if not k.startswith("TPF_")}, "HOME": str(self.home), "TERM": "dumb"}
-        # The script looks for the compiler in $PREFIX/bin (Termux). Say where it is on this machine.
-        for var, tool in (("RUSTUP_FAKE_REAL_RUSTC", "rustc"), ("RUSTUP_FAKE_REAL_CARGO", "cargo")):
-            found = real_tool(tool)
-            if found:
-                env[var] = found
+        env["RUSTUP_FAKE_REAL_RUSTC"] = str(self.rustc)
+        env["RUSTUP_FAKE_REAL_CARGO"] = str(self.cargo)
         done = subprocess.run(["bash", str(self.script), *args], capture_output=True, text=True, env=env,
                               stdin=subprocess.DEVNULL, timeout=120)
         return done.returncode, done.stdout, done.stderr
