@@ -86,7 +86,11 @@ class CodeServerCase(unittest.TestCase):
                "TPF_CS_PROC_PATTERN": self.pattern,
                # The script is written for Termux and reads $PREFIX: tests must not depend on
                # the machine they run on (the CI runs on Ubuntu, where it is not set).
-               "PREFIX": str(self.home / "usr"), "PATH": f"{self.home / 'bin'}:{os.environ['PATH']}"}
+               "PREFIX": str(self.home / "usr"),
+               # The script keeps its files under $XDG_CONFIG_HOME / $XDG_DATA_HOME when they are set
+               # (the CI runner sets them): point them into the throw-away home, never at the real ones.
+               "XDG_CONFIG_HOME": str(self.home / ".config"), "XDG_DATA_HOME": str(self.home / ".local" / "share"),
+               "PATH": f"{self.home / 'bin'}:{os.environ['PATH']}"}
         env.pop("VSCODE_IPC_HOOK_CLI", None)
         env.pop("TERM_PROGRAM", None)
         done = subprocess.run(["bash", str(self.script), *args], capture_output=True, text=True, env=env,

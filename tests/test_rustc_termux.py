@@ -1,6 +1,7 @@
 """Functional tests of the management commands of rustc-termux.sh, in a throw-away HOME."""
 
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -13,7 +14,15 @@ sys.path.insert(0, str(REPO / "tools"))
 from tpfbuild.core import Project  # noqa: E402
 
 PREFIX = os.environ.get("PREFIX", "")
-HAS_RUSTC = subprocess.run(["bash", "-c", "command -v rustc"], capture_output=True).returncode == 0
+
+
+def real_tool(name):
+    """The genuine compiler or cargo: the fake ones of ~/.rustup-fake would call themselves forever."""
+    path = os.pathsep.join(d for d in os.environ.get("PATH", "").split(os.pathsep) if ".rustup-fake" not in d)
+    return shutil.which(name, path=path)
+
+
+HAS_RUSTC = real_tool("rustc") is not None
 
 
 @unittest.skipUnless(HAS_RUSTC, "rustc not installed")
@@ -37,6 +46,11 @@ class ManageCase(unittest.TestCase):
 
     def run_rt(self, *args):
         env = {**{k: v for k, v in os.environ.items() if not k.startswith("TPF_")}, "HOME": str(self.home), "TERM": "dumb"}
+        # The script looks for the compiler in $PREFIX/bin (Termux). Say where it is on this machine.
+        for var, tool in (("RUSTUP_FAKE_REAL_RUSTC", "rustc"), ("RUSTUP_FAKE_REAL_CARGO", "cargo")):
+            found = real_tool(tool)
+            if found:
+                env[var] = found
         done = subprocess.run(["bash", str(self.script), *args], capture_output=True, text=True, env=env,
                               stdin=subprocess.DEVNULL, timeout=120)
         return done.returncode, done.stdout, done.stderr
