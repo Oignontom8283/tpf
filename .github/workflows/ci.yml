@@ -4,7 +4,7 @@
 # (see "Required checks" in docs/DEVELOPING.md):
 #   check  - syntax of every script (bash -n, shellcheck) and a first run of each
 #   build  - the real compilation: builds every script like a release does
-#   tests  - the test suite of the packager, the modules and the tools
+#   tests  - the Python test suite and the shell tests of every tool (tpf.py test)
 name: CI
 
 on:
@@ -66,5 +66,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Run the test suite
+      - name: Run the test suite of the packager, the modules and the tools
         run: python3 -m unittest discover -s tests -v
+      - name: Run the shell tests of every tool
+        # tpf.py test builds each tool, checks it and runs src/<tool>/tests/*.test.sh
+        run: python3 tpf.py test --smoke -v

@@ -44,7 +44,9 @@ jobs:
       - name: Check every script (same as the CI)
         run: python3 tpf.py check --strict --smoke
       - name: Run the tests
-        run: python3 -m unittest discover -s tests
+        run: |
+          python3 -m unittest discover -s tests
+          python3 tpf.py test --smoke
       - name: Compile every script
         run: |
           # The date written in the headers is the date of the commit: building the

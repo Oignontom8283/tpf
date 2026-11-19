@@ -44,7 +44,9 @@ class CiWorkflow(unittest.TestCase):
         self.assertNotIn("build/", text.replace("tpf.py build", ""))
 
     def test_tests_job_runs_the_whole_suite(self):
-        self.assertIn("python3 -m unittest discover -s tests", load("ci.yml"))
+        text = load("ci.yml")
+        self.assertIn("python3 -m unittest discover -s tests", text)
+        self.assertIn("python3 tpf.py test --smoke", text)  # the shell tests of every tool
 
     def test_least_privilege(self):
         self.assertRegex(load("ci.yml"), r"(?m)^permissions:\n  contents: read\n")
@@ -70,7 +72,8 @@ class ReleaseWorkflow(unittest.TestCase):
 
     def test_checks_and_tests_before_compiling(self):
         text = load("release.yml")
-        order = [text.index(s) for s in ("tpf.py check --strict --smoke", "unittest discover", "tpf.py build")]
+        order = [text.index(s) for s in ("tpf.py check --strict --smoke", "unittest discover", "tpf.py test --smoke",
+                                         "tpf.py build")]
         self.assertEqual(order, sorted(order))
 
     def test_dates_come_from_the_commit_so_a_rebuild_gives_the_same_files(self):
