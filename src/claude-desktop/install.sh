@@ -170,7 +170,7 @@ cmd_install() {
 
     # Libraries the app loads with dlopen() (invisible to the dependency check).
     for l in libX11.so.6 libX11-xcb.so.1 libxcb.so.1; do
-        if ! find "$LIB_ROOT" -name "$l" 2>/dev/null | grep -q .; then
+        if [ -z "$(find "$LIB_ROOT" -name "$l" -print -quit 2>/dev/null)" ]; then
             warn "$l is missing: the app will crash at start-up."
             echo "$l" >>"$LOG_DIR/missing_libs.log"
         fi

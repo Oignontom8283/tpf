@@ -264,13 +264,13 @@ phase_argon2_native_module_used_fo() {
             }
         done
         if [ -n "$ARGON2_DIR" ]; then
-            if find "$ARGON2_DIR" -name "*.node" 2>/dev/null | grep -q .; then
+            if [ -n "$(find "$ARGON2_DIR" -name "*.node" -print -quit 2>/dev/null)" ]; then
                 ok "argon2 native module present."
             else
                 warn "argon2 native binary missing: rebuilding for $ARCH..."
                 (cd "$CS_ROOT" && npm rebuild argon2) >"$LOG_DIR/argon2_build.log" 2>&1 ||
                     (cd "$ARGON2_DIR" && npx --yes node-gyp rebuild) >>"$LOG_DIR/argon2_build.log" 2>&1
-                if find "$ARGON2_DIR" -name "*.node" 2>/dev/null | grep -q .; then
+                if [ -n "$(find "$ARGON2_DIR" -name "*.node" -print -quit 2>/dev/null)" ]; then
                     ok "argon2 rebuilt."
                 else
                     warn "argon2 rebuild failed (see $LOG_DIR/argon2_build.log)."

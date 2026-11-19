@@ -34,7 +34,13 @@ installed_packs() {
     for p in $PACK_ALL; do has_pack "$p" && printf '%s ' "$p"; done
 }
 
-target_valid() { "$REAL_RUSTC" --print target-list 2>/dev/null | grep -qxF "$1"; }
+# The list is read first: with "rustc | grep -q", grep leaves at the first match, rustc is
+# killed by SIGPIPE and, under pipefail, the answer would randomly be "unknown target".
+target_valid() {
+    local list
+    list="$("$REAL_RUSTC" --print target-list 2>/dev/null)" || return 1
+    grep -qxF "$1" <<<"$list"
+}
 
 target_register() { grep -qxF "$1" "$TARGETS_FILE" 2>/dev/null || echo "$1" >>"$TARGETS_FILE"; }
 

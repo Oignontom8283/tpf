@@ -94,7 +94,7 @@ pack_add_targets() { # pack
     # at the first build (so the install does not build five of them for nothing).
     local t
     for t in $(pack_targets "$1"); do
-        "$REAL_RUSTC" --print target-list | grep -qxF "$t" || continue
+        target_valid "$t" || continue
         grep -qxF "$t" "$BASE/targets" 2>/dev/null || echo "$t" >>"$BASE/targets"
     done
 }
