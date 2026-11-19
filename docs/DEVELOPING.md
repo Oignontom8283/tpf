@@ -109,16 +109,21 @@ a test checks the shared contract of every tool built on `cmd`.
 
 ## Tests
 
+Two kinds, both run by the CI:
+
 ```sh
-python3 -m unittest discover -s tests
+python3 -m unittest discover -s tests     # the packager, the modules, the contract of the tools
+python3 tpf.py test                       # every tool: checked, then its shell tests
 ```
 
 | File | Covers |
 |---|---|
-| `test_build.py` | the packager: includes, embeds, errors, determinism, `check` |
+| `test_build.py` | the packager: includes, embeds, errors, headers, determinism, `check`, `build --out` |
+| `test_runner.py` | `tpf.py test` and its harness |
 | `test_lib.py`, `test_pkg.py`, `test_cmd.py` | the modules, under a real pseudo-terminal where it matters |
 | `test_tools.py` | the contract every tool built on `cmd` must keep |
-| `test_code_server.py`, `test_rustc_termux.py` | the commands of those tools, in a throw-away HOME |
+| `test_code_server.py` | the commands of code-server.sh, with a fake server |
+| `test_ci.py` | the shape of the GitHub workflows |
 
 Tests never touch the device they run on. `test_code_server.py` starts a fake
 server and gives the script a process pattern (`TPF_CS_PROC_PATTERN`) that only
@@ -128,6 +133,59 @@ replaces `termux-wake-lock` and `termux-wake-unlock`.
 What is **not** run by the tests: the `install`, `reinstall` and `uninstall` flows
 (they change packages, system files and root settings). They are checked by
 `bash -n`, `shellcheck` and by running them on a device.
+
+### `tpf.py test`
+
+It works on **any** shell script, not only the tools of this repository.
+
+```sh
+./tpf.py test                       # every tool of src/
+./tpf.py test code-server           # one tool
+./tpf.py test path/to/script.sh     # any script
+./tpf.py test path/to/x.test.sh     # one test file
+```
+
+For each target it runs, in this order:
+
+1. **the check**: `bash -n`, then `shellcheck` (`--shellcheck LEVEL`, default `error` for a
+   plain script, the level of its `tpf.toml` for a tool; `--no-lint` skips it);
+2. **`--smoke`** (optional): the script must answer `--version` and `--help`;
+3. **its test files**: `script.test.sh` and `script.*.test.sh` next to a plain script,
+   or `src/<tool>/tests/*.test.sh` for a tool (the tool is built to a temporary file first).
+
+`-k TEXT` runs only the tests whose name contains TEXT, `-v` lists the passing tests too,
+`--timeout S` limits a test file. The status is 1 if anything failed.
+
+A test file is plain bash that defines functions named `test_*`:
+
+```sh
+setup() { stub tool 'echo "stubbed"'; }          # before each test (optional; teardown: after)
+
+test_greets() {
+    run_script Ada                               # runs the script under test
+    assert_status 0
+    assert_eq "hello, Ada" "$OUT"
+}
+
+test_needs_a_network() { skip "no network here"; }
+```
+
+Each test runs in its own subshell, in a **fresh empty HOME** (its XDG folders inside it,
+no `TPF_*` variable, no terminal), with stubs first in the `PATH`: nothing leaks from one
+test to the next and the real home is never touched. Available in a test:
+
+| Name | Use |
+|---|---|
+| `SCRIPT`, `TEST_HOME`, `STUBS` | the script under test, the fresh home, the folder of stubs |
+| `run CMD...`, `run_script ARG...` | run a command (stdin closed); sets `OUT`, `ERR`, `STATUS` |
+| `stub NAME 'BODY'` | a command that replaces the real one (or `stub NAME <<'EOF'`) |
+| `assert_eq`, `assert_ne`, `assert_status`, `assert_contains`, `assert_not_contains`, `assert_match` | comparisons, with a readable report |
+| `assert_file`, `assert_no_file`, `assert_file_contains` | files |
+| `fail MESSAGE`, `skip REASON` | fail or skip the test |
+
+`tools/tpfbuild/harness.sh` documents them all. Tests that depend on the compiler of the
+machine are fragile: give the script a stub instead (see
+`src/rustc-termux/tests/manage.test.sh`).
 
 ## Habits
 

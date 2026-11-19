@@ -88,7 +88,8 @@ builds one tool; `tpf.py list` shows the tools and the modules they use.
 ```sh
 ./tpf.py build      # build the scripts into dist/
 ./tpf.py check      # every script valid (bash -n, shellcheck)? add --smoke to run them
-python3 -m unittest discover -s tests   # the test suite
+python3 tpf.py test            # check every tool and run its shell tests (works on any script)
+python3 -m unittest discover -s tests   # the Python test suite
 ./tpf.py list       # scripts and the modules they use
 ./tpf.py new NAME   # start a new tool from a template
 python3 -m unittest discover -s tests
