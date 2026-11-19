@@ -71,9 +71,11 @@ write_clang_linker() { # target triple [sysroot]
     chmod +x "$out"
 }
 
-linker_paths_ok() { # every absolute path written in a linker script must exist
+# Every absolute path the linker uses (sysroot, libraries) must exist. The first line, the
+# "#!" interpreter, is not one of them: it only says how to start the script.
+linker_paths_ok() {
     local f="$1" p missing=0
-    for p in $(grep -oE '/data/data/[^ "]+' "$f" | sed 's/^-[A-Za-z]*//' | sort -u); do
+    for p in $(tail -n +2 "$f" | grep -oE '/data/data/[^ "]+' | sed 's/^-[A-Za-z]*//' | sort -u); do
         [ -e "$p" ] || {
             echo "$p"
             missing=1

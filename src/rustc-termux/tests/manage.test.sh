@@ -127,6 +127,18 @@ test_list_flags_a_linker_that_points_to_missing_files() {
     assert_match "$OUT" "x86_64-linux-android: missing: .*gone"
 }
 
+# The "#!" line of a linker script names the interpreter, written for Termux. It is not an input of
+# the linker: on any other system (the CI runs on Ubuntu) it must not be reported as missing.
+test_list_does_not_check_the_interpreter_line_of_a_linker() {
+    run_script linker add armv7-linux-androideabi -- my-cc
+    assert_status 0
+    f="$(linker_file armv7-linux-androideabi)"
+    { echo '#!/data/data/nowhere/bin/bash'; tail -n +2 "$f"; } >"$f.new" && mv "$f.new" "$f" && chmod +x "$f"
+    run_script linker list
+    assert_not_contains "$OUT" "missing"
+    assert_contains "$OUT" "armv7-linux-androideabi"
+}
+
 test_remove_and_errors() {
     run_script linker add armv7-linux-androideabi -- my-cc
     run_script linker remove armv7-linux-androideabi
